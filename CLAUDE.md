@@ -419,17 +419,11 @@ Bu fazın temel amacı; sistemin pasif bir "soru-cevap" asistanından çıkıp, 
 - Model, kullanıcı komutunu ("CS:GO aç") anladığında önce metin üretmeyecek; doğrudan `{"name": "execute_program", "args": {"target": "csgo.exe"}}` JSON'ı dönecek.
 - `main.py` üzerindeki event loop, bu JSON'u parse edip `pyautogui` veya `subprocess` ile paralel thread'de çalıştıracak.
 
-**2. TTS Streaming Pipeline & Zero-Shot Cloning (Chatterbox Integration)**
-- Mevcut `Edge TTS` yapısı "tamamının sentezlenmesini bekle" (blocking) mantığında çalışıp doğallıktan uzaktır.
-- Mimari Geçiş: **`resemble-ai/chatterbox`** (Çok Dilli, 500M) modeline geçilecek.
-- Kurulum Stratejisi: `main.py` ve sistem bütünlüğünü bozmamak (ve dependency conflict yasamamak) adına Chatterbox ayrı bir "micro-service" (örn: `http://127.0.0.1:9090`) olarak çalıştırılacak.
-- Özellikler: Kullanıcının belirleyeceği 10 sn'lik bir referans sesi kullanılarak (Zero-shot cloning) model asimile edilecek. Metin chunk'ları geldiği milisaniye içerisinde streame çevrilip 300-500ms arası ultra-düşük gecikme hedeflenecek.
+**2. Ultra-Low Latency & Native Speech (Gemini Live Advantage)**
+- Ağır lokal TTS modelleri (Chatterbox vb.) VRAM dar boğazına sebep olacağından kullanılmayacaktır. 
+- Hedef: Halihazırda var olan `Gemini 3.1 Flash Live` modelinin doğal, stream'li "Native Audio Dialog" sistemi sonuna kadar sömürülecektir. Google'ın kendi sunucularından gelen 200-300ms gecikmeli ses sentezi, sistemi sıfır VRAM harcayarak akıcı tutar.
 
-**3. Latency Masking & Paralinguistic Engine (Acoustic Illusions)**
-- Fonksiyon çağrıları veya ağ gecikmeleri sırasındaki sessizliği kırmak için Chatterbox'un doğal `paralinguistic tags` mekanizması kullanılacak.
-- Mimari: LLM JSON yollarken metnin içine `[chuckle]`, `[laugh]`, `[cough]` gibi etiketler yedirecek. Sistem bunu okumadan doğrudan insansı nefes/gülme seslerine dönüştürerek asistanın "mekanik" imajını (robotik algıyı) tamamen silecektir. Yüksek akıcılık (fluidity) hissi bu akustik illüzyonla garanti altına alınır.
-
-**4. Contextual Persona & Memory State**
+**3. Contextual Persona & Memory State**
 - Sistem, kullanıcının envanterini bilecek (Oynanan oyunlar, kurulu dizinler, favori yayın sahneleri). Bu statik context, system prompt içerisine JSON state olarak yerleştirilecek.
 - Örn: `{"user_context": {"favorite_game": "CS:GO", "obs_scene": "Gameplay"}}`
 
