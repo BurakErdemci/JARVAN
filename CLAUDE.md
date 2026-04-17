@@ -347,18 +347,18 @@ v0.1'deki screenshot sistemiyle başlanıyor, v0.2'de Gemini Live'a geçiliyor. 
 - [x] ~~Kokoro TTS~~ → Edge TTS (`tr-TR-EmelNeural`)
 - [ ] Minimal Electron UI (açık/kapalı toggle, aktif mod göstergesi, log)
 
-### v0.2 — Gemini Live (Video akışı)
-- [ ] Gemini Live API entegrasyonu (`gemini-3.1-flash-live-preview`)
-- [ ] Ses + ekran video stream — WebSocket pipeline
-- [ ] Timestamp senkronizasyonu (ses-video hizalaması)
-- [ ] VAD sisteminin Live API'a adaptasyonu
-- [ ] Gerçek zamanlı animasyon/gameplay analizi
+### v0.2 — Gemini Live (Video & Hybrid Stream)
+- [x] Gemini Live API entegrasyonu (`gemini-3.1-flash-live-preview`)
+- [x] Ses + Ekran video stream — (1 FPS WebSocket Sürekli Yayın Mimarisi)
+- [x] Proaktif mod kapalıyken 2.5 Flash Native (Audio) ile ucuz limitli kullanım sağlanması
+- [x] VAD olmadan direkt Live Session mikrofon stream yapısı kurulması
+- [x] Kullanıcı UI entegrasyonu (Mod göstergeleri, Proaktif Toggle, Log ekranı)
+- [x] Proaktif mod (Video yayını) anında aç/kapa yapıldığında sistemin kendini adapte etmesi
 
-### v0.3 — Kişiselleştirme
-- [ ] Gemini Flash Lite intent filter (daha akıllı filtre)
-- [ ] Kullanıcı bağlamı hafızası (SQLite)
-- [ ] Ollama fallback (internet yoksa local model)
-- [ ] Ayarlar ekranı (VAD threshold, dil, mod tercihleri)
+### v0.3 — Context & Hafıza (Kişiselleştirme)
+- [x] Kullanıcı bağlamı hafızası (Sürekli Hafıza - `main.py` içerisinden son 20 mesajın enjektesi)
+- [x] Modlar arası (Live/Proaktif) geçişte kopan bağlantılarda anlık durum kurtarması
+- [ ] Ayarlar ekranı (VAD threshold, dil, ses tipi değiştirme arayüzü)
 - [ ] Production build (PyInstaller + electron-builder)
 
 ### v0.4 — Computer Use (PC Kontrolü)
@@ -409,6 +409,29 @@ OpenClaw messaging platform üzerinden çalışıyor, ne gönderdiği belirsiz, 
 - [ ] Görev türü sınıflandırıcı (browser task mı, system task mı?)
 - [ ] Hata yönetimi (yanlış tıklama, sayfa yüklenmedi, popup çıktı)
 - [ ] Sandbox modu (tehlikeli görevleri önce simüle et)
+
+### v0.5 — Agentic Operations & Ultra-Low Latency Pipeline (Jarvis Paradigm)
+
+Bu fazın temel amacı; sistemin pasif bir "soru-cevap" asistanından çıkıp, **işletim sistemi seviyesinde otonom** (agentic) işlemleri **300ms** barajının altında tepki (R-T-T) vererek yürütebilmesidir. Başka bir AI ajanı projeyi devraldığında uygulanması gereken mimari prensipler şunlardır:
+
+**1. Architectural Shift: Function Calling (Tool Use)**
+- Gemini / Claude modellerinin `tools` veya `function_declarations` API'leri entegre edilecek.
+- Model, kullanıcı komutunu ("CS:GO aç") anladığında önce metin üretmeyecek; doğrudan `{"name": "execute_program", "args": {"target": "csgo.exe"}}` JSON'ı dönecek.
+- `main.py` üzerindeki event loop, bu JSON'u parse edip `pyautogui` veya `subprocess` ile paralel thread'de çalıştıracak.
+
+**2. TTS Streaming Pipeline & Zero-Shot Cloning (Chatterbox Integration)**
+- Mevcut `Edge TTS` yapısı "tamamının sentezlenmesini bekle" (blocking) mantığında çalışıp doğallıktan uzaktır.
+- Mimari Geçiş: **`resemble-ai/chatterbox`** (Çok Dilli, 500M) modeline geçilecek.
+- Kurulum Stratejisi: `main.py` ve sistem bütünlüğünü bozmamak (ve dependency conflict yasamamak) adına Chatterbox ayrı bir "micro-service" (örn: `http://127.0.0.1:9090`) olarak çalıştırılacak.
+- Özellikler: Kullanıcının belirleyeceği 10 sn'lik bir referans sesi kullanılarak (Zero-shot cloning) model asimile edilecek. Metin chunk'ları geldiği milisaniye içerisinde streame çevrilip 300-500ms arası ultra-düşük gecikme hedeflenecek.
+
+**3. Latency Masking & Paralinguistic Engine (Acoustic Illusions)**
+- Fonksiyon çağrıları veya ağ gecikmeleri sırasındaki sessizliği kırmak için Chatterbox'un doğal `paralinguistic tags` mekanizması kullanılacak.
+- Mimari: LLM JSON yollarken metnin içine `[chuckle]`, `[laugh]`, `[cough]` gibi etiketler yedirecek. Sistem bunu okumadan doğrudan insansı nefes/gülme seslerine dönüştürerek asistanın "mekanik" imajını (robotik algıyı) tamamen silecektir. Yüksek akıcılık (fluidity) hissi bu akustik illüzyonla garanti altına alınır.
+
+**4. Contextual Persona & Memory State**
+- Sistem, kullanıcının envanterini bilecek (Oynanan oyunlar, kurulu dizinler, favori yayın sahneleri). Bu statik context, system prompt içerisine JSON state olarak yerleştirilecek.
+- Örn: `{"user_context": {"favorite_game": "CS:GO", "obs_scene": "Gameplay"}}`
 
 ---
 
