@@ -454,6 +454,11 @@ Projeyi sadece talep üzerine yanıt veren bir robottan, inisiyatif alabilen "De
 - LLM'in halüsinasyon görüp sistemi silmesi gibi risklere karşı Python seviyesinde Regex ve System Path black-list duvarı (`safe_commands.py`)
 - *Kural:* Silme veya Kritik dosya yazma (Destructive Actions) içeren HER tetiklemede sistem `Human-in-the-loop` (İnsan Onayı İsteme) durumuna geçer ("Devam edeyim mi patron?").
 
+**7. Machine Learning & Vectorized Behavioral Persona**
+- Sadece Prompt tabanlı kişilik değil, **RAG (Retrieval-Augmented Generation)** kullanılarak gerçek bir Makine Öğrenmesi (Behavioral Pattern Analysis) süreci işletilecektir.
+- *Mimari:* Kullanıcının her etkileşimi, kod düzeltiş şekli veya gün içindeki tercihleri, açık kaynak bir "Embedding" modeli ile matematiksel vektörlere çevrilip lokal bir `ChromaDB` (Vektör Veritabanı) içerisine yazılır.
+- *Oto-Kişiselleştirme:* Asistan, "Senin Blueprint yazma stilini sevmediğini biliyorum, bu yüzden C++ ile yanıt hazırladım" gibi doğrudan M.L. hafızasından gelen saptamalar yapar. Aynı zamanda kullanıcı alışkanlıklarına göre Anomaly Detection (Örn: "Çok hızlı ve hatalı klavye kullanıyorsun, yoruldun mu?") yürütebilir.
+
 ---
 
 ## Geliştirici
