@@ -427,6 +427,33 @@ Bu fazın temel amacı; sistemin pasif bir "soru-cevap" asistanından çıkıp, 
 - Sistem, kullanıcının envanterini bilecek (Oynanan oyunlar, kurulu dizinler, favori yayın sahneleri). Bu statik context, system prompt içerisine JSON state olarak yerleştirilecek.
 - Örn: `{"user_context": {"favorite_game": "CS:GO", "obs_scene": "Gameplay"}}`
 
+### v0.6 — The Ultimate Agentic Vision (Gece Fikirleri & İleri Otonomi)
+
+Projeyi sadece talep üzerine yanıt veren bir robottan, inisiyatif alabilen "Demir Adam Jarvis" (Junior Developer + Remote Agent) seviyesine taşıyacak uzun vaadeli hedefler şunlardır:
+
+**1. "Context Aware" (Oto-Pilot) İnisiyatif Mekanizması**
+- Asistan, OS process listesini veya ekranı düzenli okuyarak durum değişikliklerini fark eder. 
+- *Senaryo:* Sistem Unreal Engine 5 açıldığını detect eder. Jarvan, sen hiçbir şey demeden: *"Günaydın Burak. Hata aldığımız C++ Inventory sınıfına geri döndüğünü görüyorum. Dökümanları yandayayım mı?"* şeklinde inisiyatifli iletişimi başlatır.
+
+**2. Shadow Coder (Görünmez İzleyici / Rewind Asistanı)**
+- Arka planda 1/30 FPS gibi çok yavaş bir oranla veya VSCode log hook'ları ile geçmişi (Visual/Textual Memory) ön bellekte tutar.
+- *Senaryo:* Hata yaptığında "10 dk önce neyi bozdum?" dersin. Jarvan yakın ekran datasını tarayıp *"Saat 14:15'te pointer'ı null bırakıp kayıta geçtin"* diyerek Rewind (Geri Sarma) yeteneği sergiler.
+
+**3. Otonom "Sandbox" Hata Çözücü (Junior Çırak)**
+- Derleme patladığında (Error 500 / Build Fail), Jarvan ana dosyalara müdahale etmeden önce geçici bir `Sandbox` klasörü yaratır. Kodu kendi CLI'ında defalarca dener, bozar ve dependency ekler. 
+- Build başarılı (Exit Code 0) verdiğinde sana *"Eksik kütüphaneleri hallettim, düzeltme hazır"* diyerek sonucu sunar.
+
+**4. Unreal Engine 5 "Otonom Editor" Kancası (The Holy Grail)**
+- UE5'in `Python Editor Scripting Plugin` mimarisi veya "Blueprint Node Text Copy-Paste" hack'i kullanılacaktır.
+- *Senaryo:* Jarvan Blueprint spagettisini analiz edip C++ `UCLASS/UFUNCTION` mimarisine dönüştürür. UE5 terminalinden veya Pano (Clipboard) emülasyonu ile düğümleri arayüze otomatik çizer.
+
+**5. Telegram Remote "Execute" Tünelleri**
+- `python-telegram-bot` kullanılarak dışarıdan sesli/yazılı talimat alıp PC'yi uyandıran (Wake-on-LAN) veya görev başlatan bir köprü tetikleyicisi. Jarvan işlemleri halledip "Ses Kaydı" (Voice Note) olarak Telegramdan rapor döner.
+
+**6. Hard-Coded Guardrails (Güvenlik Kalkanı)**
+- LLM'in halüsinasyon görüp sistemi silmesi gibi risklere karşı Python seviyesinde Regex ve System Path black-list duvarı (`safe_commands.py`)
+- *Kural:* Silme veya Kritik dosya yazma (Destructive Actions) içeren HER tetiklemede sistem `Human-in-the-loop` (İnsan Onayı İsteme) durumuna geçer ("Devam edeyim mi patron?").
+
 ---
 
 ## Geliştirici
