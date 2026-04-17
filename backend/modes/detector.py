@@ -1,5 +1,9 @@
-import pygetwindow as gw
 from modes.prompts import UNREAL_PROMPT, UNITY_PROMPT, CODE_PROMPT, DEFAULT_PROMPT
+
+try:
+    import pygetwindow as gw
+except Exception:
+    gw = None
 
 WINDOW_MODE_MAP = [
     (["Unreal", "UE5", "UE4"], "unreal", UNREAL_PROMPT),
@@ -8,16 +12,22 @@ WINDOW_MODE_MAP = [
 ]
 
 
+def get_active_window_title() -> str:
+    if gw is None:
+        return ""
+    try:
+        window = gw.getActiveWindow()
+        return window.title if window else ""
+    except Exception:
+        return ""
+
+
 def get_active_mode() -> tuple[str, str]:
     """Aktif pencereye göre mod ve system prompt döner.
 
     Returns: (mode_name, system_prompt)
     """
-    try:
-        window = gw.getActiveWindow()
-        title = window.title if window else ""
-    except Exception:
-        title = ""
+    title = get_active_window_title()
 
     for keywords, mode_name, prompt in WINDOW_MODE_MAP:
         for kw in keywords:
@@ -29,10 +39,6 @@ def get_active_mode() -> tuple[str, str]:
 
 if __name__ == "__main__":
     mode, _ = get_active_mode()
-    try:
-        import pygetwindow as gw
-        title = gw.getActiveWindow().title
-    except Exception:
-        title = "?"
+    title = get_active_window_title() or "?"
     print(f"Aktif pencere: {title}")
     print(f"Mod: {mode}")
