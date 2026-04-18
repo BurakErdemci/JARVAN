@@ -38,6 +38,7 @@ class Pipeline:
         self.live_enabled = True
         self.proactive_enabled = False
         self.conversation_memory: list[dict] = []
+        self.search_cache: list[dict] = []
 
     def emit(self, type: str, **data):
         self.q.put(PipelineEvent(type, **data))
@@ -104,23 +105,45 @@ class Pipeline:
 
     def _run_live(self):
         import asyncio
+        import time
         from ai.live_session import LiveSession
 
+        MAX_RETRIES = 5
+        retries = 0
         try:
             mode_name, system_prompt = get_active_mode()
             self.emit("mode", name=mode_name)
 
-            session = LiveSession(
-                system_prompt=system_prompt,
-                on_log=self._emit_log,
-                should_stop=self.stop_flag.is_set,
-                send_video=self.proactive_enabled,
-                conversation_memory=self.conversation_memory,
-            )
+            while not self.stop_flag.is_set():
+                session = LiveSession(
+                    system_prompt=system_prompt,
+                    on_log=self._emit_log,
+                    should_stop=self.stop_flag.is_set,
+                    send_video=self.proactive_enabled,
+                    conversation_memory=self.conversation_memory,
+                    search_cache=self.search_cache,
+                )
 
-            asyncio.run(session.run())
-        except Exception as e:
-            self.emit("log", level="error", text=f"Live pipeline hatası: {e}")
+                start_ts = time.monotonic()
+                try:
+                    asyncio.run(session.run())
+                except Exception as e:
+                    self.emit("log", level="error", text=f"Live pipeline hatası: {e}")
+
+                if self.stop_flag.is_set():
+                    break
+
+                ran_for = time.monotonic() - start_ts
+                if ran_for > 30:
+                    retries = 0
+
+                retries += 1
+                if retries > MAX_RETRIES:
+                    self.emit("log", level="error", text=f"Live {MAX_RETRIES} kez üst üste çöktü — otomatik yeniden bağlanma durduruldu.")
+                    break
+
+                self.emit("log", level="system", text=f"Live bağlantısı koptu, {retries}. yeniden bağlanma (hafıza korundu)...")
+                time.sleep(min(2 * retries, 8))
         finally:
             self.emit("log", level="system", text="Live oturum kapandı.")
 

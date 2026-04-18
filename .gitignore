@@ -17,6 +17,10 @@ env/
 # Secrets
 .env
 *.env.local
+backend/contacts.json
+backend/contacts_phones.json
+backend/credentials.json
+backend/token.json
 
 # OS
 .DS_Store

@@ -6,6 +6,9 @@ load_dotenv()
 # Gemini
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
+# Tavily (LLM-odaklı web arama, 1000 istek/ay free)
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
+
 # Kişisel
 MY_WHATSAPP = os.getenv("MY_WHATSAPP", "")  # Ülke koduyla, + ya da boşluk olmadan
 

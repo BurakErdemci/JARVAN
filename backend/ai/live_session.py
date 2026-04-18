@@ -17,6 +17,9 @@ from google.genai import types
 
 from tools.app_control import open_app, close_app
 from tools.whatsapp import send_whatsapp
+from tools.browser import open_url, search_web, hidden_search
+from tools.mail import send_mail
+from tools.weather import get_weather
 
 FUNCTION_DECLARATIONS = [
     {
@@ -48,8 +51,107 @@ FUNCTION_DECLARATIONS = [
         },
     },
     {
+        "name": "get_weather",
+        "description": "Herhangi bir şehrin ANLIK ve YARINKİ hava durumunu (derecesiyle birlikte) SANIYELER İÇİNDE getirir. Kullanıcı hava durumu sorduğunda (eskişehir hava durumu vs) web aramasına yönelme, KESİNLİKLE BU ARACI ZORUNLU KULLAN.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "location": {
+                    "type": "string",
+                    "description": "Şehir veya bölge adı (örn: Eskişehir, İstanbul)",
+                },
+            },
+            "required": ["location"],
+        },
+    },
+    {
+        "name": "open_url",
+        "description": "Tarayıcıda verilen URL'yi açar. Tam URL (https://...) ya da domain (metacritic.com/...) verilebilir. Spesifik sayfa/oyun/film isteğinde bu aracı kullan.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "Açılacak tam URL veya domain (örn: https://www.metacritic.com/game/crimson-desert)",
+                },
+            },
+            "required": ["url"],
+        },
+    },
+    {
+        "name": "search_web",
+        "description": (
+            "Arka planda gizli arama yapar ve en iyi 3 metin sonucunu döner. "
+            "Herhangi bir araştırma için BUNU ZORUNLU KULLAN. "
+            "Kullanıcı senden bulduğun bir sayfayı açmanı isterse, doğrudan o sitenin 'href' (link) adresini kullanarak open_url aracını çağır."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Aranacak kelime (örn: 'crimson desert metacritic')",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "open_result",
+        "description": (
+            "En son `search_web` sonucundaki N. linki tarayıcıda açar. "
+            "Kullanıcı araştırma sonrası 'aç', 'göster', 'birinciyi aç' derse URL ezberlemek yerine bunu kullan. "
+            "1 = birinci sonuç, 2 = ikinci, 3 = üçüncü."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "index": {
+                    "type": "integer",
+                    "description": "Açılacak sonucun sıra numarası (1, 2 veya 3)",
+                },
+            },
+            "required": ["index"],
+        },
+    },
+    {
+        "name": "see_screen",
+        "description": (
+            "Kullanıcının o ANKİ bilgisayar ekranını çeker ve ne gördüğünü Türkçe 2-3 cümle olarak döner. "
+            "Kullanıcı 'ekrana bak', 'şuna bak', 'görüyor musun', 'ekranda ne var', 'şu sayfa' gibi ekranla ilgili bir şey sorduğunda ZORUNLU bu aracı çağır. "
+            "Tahmin yürütme, asla ekranda ne olduğunu uydurma — bu araç gerçek ekran görüntüsünü analiz eder ve sana metin olarak döner. "
+            "Aracı çağırmadan ekran hakkında konuşma."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "send_mail",
+        "description": (
+            "Gmail compose ekranını prefilled açar. `auto_send=true` ise tarayıcı yüklenince otomatik gönderir (Cmd+Enter), "
+            "`auto_send=false` ise sadece doldurup açık bırakır (kullanıcı manuel gönderir). "
+            "Kullanıcı 'gönder', 'at', 'yolla' gibi net gönderim sözcüğü kullanırsa auto_send=true; "
+            "'hazırla', 'göster', 'aç', 'doldur' gibi pasif istek varsa auto_send=false."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "to": {"type": "string", "description": "Alıcı — tam e-posta adresi VEYA rehberdeki isim ('burak', 'burcu', 'kendime', 'kurumsal', 'yan hesap'). Sistem ismi otomatik adrese çevirir."},
+                "subject": {"type": "string", "description": "Mail konusu"},
+                "body": {"type": "string", "description": "Mail gövdesi (düz metin)"},
+                "auto_send": {"type": "boolean", "description": "True ise otomatik gönderir, False ise manuel gönderim için açık bırakır."},
+            },
+            "required": ["to", "subject", "body", "auto_send"],
+        },
+    },
+
+    {
         "name": "send_whatsapp",
-        "description": "Kullanıcının WhatsApp'ından kendisine veya belirtilen numaraya mesaj gönderir. Numara verilmezse .env'deki MY_WHATSAPP'a gider.",
+        "description": (
+            "Kullanıcının WhatsApp'ından mesaj gönderir. `phone` alanına tam numara (ülke koduyla, + olmadan) VEYA rehberdeki isim "
+            "('kendime', 'burak' vb.) verilebilir. Sistem ismi numaraya otomatik çevirir. "
+            "Rehberde olmayan bir isim verilirse tool `ok: false` ile hata döner — o durumda kullanıcıdan numarayı iste, "
+            "UYDURMA veya kendine gönderme. phone boş bırakılırsa .env'deki MY_WHATSAPP'a (kullanıcının kendi numarasına) gider."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
@@ -59,7 +161,7 @@ FUNCTION_DECLARATIONS = [
                 },
                 "phone": {
                     "type": "string",
-                    "description": "İsteğe bağlı hedef numara (ülke koduyla, + olmadan). Boş bırakılırsa kendine gider.",
+                    "description": "Hedef: rehberdeki isim (ör. 'cengiz') VEYA tam numara (ülke koduyla, + olmadan, ör. '905321234567'). Boş = kullanıcının kendisi.",
                 },
             },
             "required": ["message"],
@@ -70,13 +172,22 @@ FUNCTION_DECLARATIONS = [
 TOOL_IMPL = {
     "open_app": lambda args: open_app(args.get("name", "")),
     "close_app": lambda args: close_app(args.get("name", "")),
+    "get_weather": lambda args: get_weather(args.get("location", "")),
+    "open_url": lambda args: open_url(args.get("url", "")),
+    "send_mail": lambda args: send_mail(
+        args.get("to", ""),
+        args.get("subject", ""),
+        args.get("body", ""),
+        bool(args.get("auto_send", False)),
+    ),
     "send_whatsapp": lambda args: send_whatsapp(args.get("message", ""), args.get("phone")),
 }
 
 MODEL_NATIVE_AUDIO = "gemini-2.5-flash-native-audio-latest"
 MODEL_FLASH_LIVE = "gemini-3.1-flash-live-preview"
 
-VISION_MODELS = ("gemini-3.1-flash-lite-preview", "gemini-3-flash-preview")
+VISION_MODELS = ("gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3.1-flash-lite-preview")
+SUMMARY_MODELS = ("gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-3.1-flash-lite-preview")
 VOICE_NAME = "Kore"
 INPUT_SAMPLE_RATE = 16000
 OUTPUT_SAMPLE_RATE = 24000
@@ -84,27 +195,40 @@ INPUT_CHUNK_MS = 32
 INPUT_CHUNK = int(INPUT_SAMPLE_RATE * INPUT_CHUNK_MS / 1000)
 OUTPUT_COOLDOWN_S = 0.8  # Jarvan konuşurken + bittikten sonra kısa sessizlik (Yankıyı engellemek için 0.8'e çıkarıldı)
 
-VISION_TRIGGER_RE = re.compile(
-    r"\b(bak\w*|gör\w*|ekran\w*|şurd[ae]|şurad[ae]|burd[ae]|burad[ae])\b",
-    re.IGNORECASE,
+RESEARCH_HINT = (
+    "\n\n[ARAŞTIRMA AKIŞI — ZORUNLU KURALLAR]\n"
+    "Kullanıcı fiyat, bilet, puan, tarih, ürün, karşılaştırma, haber, 'X nedir/kim/ne kadar' gibi somut güncel bilgi istediğinde:\n"
+    "1. HER ZAMAN `search_web(query)` aracını çağır. Arka planda canlı web araması yapar. Sana dönen sonuç ZATEN Türkçe 2-4 cümlelik bir `summary` alanı içerir — sistem ham sonuçları arka planda Flash Lite ile özetleyip sana sunar. Aramadan ASLA fiyat, havayolu adı, puan, tarih, URL ÜRETME. (Hava durumu için get_weather kullan.)\n"
+    "2. Çağrı öncesi kısaca 'Hemen araştırıyorum...' de ve SUS, sonucu bekle.\n"
+    "3. Sonuç gelince `summary` alanını kendi ağzınla, biraz yeniden düzenleyerek söyle. Kaynak isimlerini ('Metacritic'e göre...', 'NotebookCheck'e göre...') kullanabilirsin — bu bilgi summary içinde zaten geçiyor. URL ASLA söyleme, uzun linkleri JSON'a yazma.\n"
+    "4. Sonra 'İstersen birincisini açabilirim' diye TEKLİF et. Kullanıcı 'aç', 'göster', 'evet' derse `open_result(index)` çağır (1, 2 veya 3). URL hatırlamana gerek yok.\n"
+    "5. Arama dışı, kullanıcının açıkça söylediği bir domain için `open_url` kullan. Araştırma sonucunu açmak için DAİMA `open_result`."
 )
 
 TOOL_CONFIRMATION_HINT = (
     "\n\n[ARAÇ KULLANIM KURALLARI]\n"
-    "- `open_app` ve `close_app`: düşük riskli, doğrudan çağırabilirsin.\n"
-    "- `send_whatsapp` VE dış dünyaya görünen her türlü aksiyon: ÖNCE ONAY AL. "
-    "Önce 'X numarasına (veya kendine) şu mesajı atıyorum: \"...\" — onaylıyor musun?' diye net bir cümle kur. "
+    "- `open_app`, `close_app`, `open_url`: düşük riskli, doğrudan çağırabilirsin. "
+    "Kullanıcı 'X sayfasını aç' derse önce 'tamam açıyorum' gibi kısa bir onay söyle, aracı çağır.\n"
+    "- `search_web`: arka planda sessiz çalışır, ekranda bir şey açılmaz. 'Hemen araştırıyorum...' de, aracı çağır, sonucu bekle — 'açıyorum' DEME (çünkü hiçbir şey açılmıyor).\n"
+    "- `send_whatsapp` ve `send_mail` (özellikle auto_send=true) VE dış dünyaya görünen her türlü aksiyon: ÖNCE ONAY AL. "
+    "Mail için: 'X adresine \"konu\" başlıklı şu mesajı yazıp GÖNDERİYORUM (veya HAZIRLIYORUM): \"...\" — onaylıyor musun?' diye net bir cümle kur. "
+    "WhatsApp için aynı kalıp. "
     "Kullanıcı 'evet', 'tamam', 'at', 'gönder', 'onaylıyorum' gibi NET onay vermeden aracı ÇAĞIRMA. "
     "'Belki', 'bilmiyorum', 'şey' gibi belirsiz cevaplar → tekrar sor.\n"
     "- Kullanıcı 'iptal', 'dur', 'boşver' derse aracı çağırma, kısaca 'tamam iptal ettim' de."
 )
 
 VISION_BEHAVIOR_HINT_FALLBACK = (
-    "\n\n[ÇOK ÖNEMLİ] Kullanıcının ekranını saniye saniye GÖREMİYORSUN. "
-    "Kullanıcı 'ekranda ne var?' diye sorduğunda mekaniğin ekran fotoğrafı çekmesi 2-3 saniye sürer. "
-    "Bu yüzden ZAMAN KAZANMAK adına SADECE 'Hemen bakıyorum...' veya 'Bir saniye...' gibi çok kısa bir şey söyle ve anında SUS (Cümleyi bitir ki mekanik sana fotoğrafı ulaştırabilsin). "
-    "ASLA o an sallayarak (tahmin yürüterek) ekranda ne olduğunu anlatmaya çalışma! "
-    "Kısa bir süre sonra sana [Gizli Sistem Bildirimi] içinde ekranın metni ulaştığında doğrudan 'Ekranda şu an ... görüyorum' diyerek oradan oku."
+    "\n\n[EKRANI GÖRME — ZORUNLU KURALLAR]\n"
+    "Kullanıcının ekranını saniye saniye GÖREMİYORSUN. Ekranı görmek için TEK YOL: `see_screen()` aracını çağırmak.\n"
+    "1. Kullanıcı ekranla ilgili bir şey sorduğunda ('ekrana bak', 'şuna bak', 'görüyor musun', 'ekranda ne var', 'şu sayfa', 'açtığın site' vb.):\n"
+    "   a) Önce kısaca 'Hemen bakıyorum...' de ve SUS.\n"
+    "   b) `see_screen()` aracını çağır — argüman yok, boş obje.\n"
+    "   c) Araç sana `screen` alanında gerçek ekran metnini dönecek. Cevabını SADECE ve SADECE bu metne dayanarak 'Ekranda ... görüyorum' şeklinde ver.\n"
+    "2. YASAK: `see_screen()` çağırmadan ekran hakkında konuşma. 'Ekranda X var' gibi bir cümleyi aracı çağırmadan ASLA kurma — önceki sohbetten, tool sonuçlarından veya tahminden ekran içeriği ÜRETME.\n"
+    "3. YASAK: Ekran görmek için `open_app`, `open_url` gibi başka araçları çağırma. Ekran = SADECE `see_screen()`.\n"
+    "4. Kullanıcı ekranı sormuyorsa (sohbet, araştırma, başka tool) `see_screen()` çağırma. 'Bakalım', 'görelim' gibi dolgu ifadeleri ekran isteği DEĞİL.\n"
+    "5. ÇOK ÖNEMLİ: `see_screen()` `ok: false` dönerse (hata, 503, timeout), kullanıcıya DÜRÜSTÇE söyle: 'Şu an ekrana bakamadım, bir saniye tekrar deneyebilir miyim?' DE. ASLA önceki ekran içeriğini tekrar etme, tahminden ekran anlatma. Hafızandaki eski ekran bilgisi artık geçersiz."
 )
 
 VISION_BEHAVIOR_HINT_PROACTIVE = (
@@ -121,6 +245,7 @@ class LiveSession:
         should_stop: Callable[[], bool],
         send_video: bool = False,
         conversation_memory: list[dict] = None,
+        search_cache: list[dict] = None,
     ):
         self.system_prompt = system_prompt
         self.on_log = on_log
@@ -129,18 +254,19 @@ class LiveSession:
         self.conversation_memory = conversation_memory or []
         self.last_output_time = 0.0
         self.is_speaking = False
-        self.vision_in_flight = False
+        self.last_search_results: list[dict] = search_cache if search_cache is not None else []
         self.client = genai.Client(
             api_key=GEMINI_API_KEY,
             http_options={"api_version": "v1beta"},
         )
 
     async def run(self):
-        active_model = MODEL_FLASH_LIVE if self.send_video else MODEL_NATIVE_AUDIO
+        active_model = MODEL_FLASH_LIVE
         system_instruction = (
             self.system_prompt
             + (VISION_BEHAVIOR_HINT_PROACTIVE if self.send_video else VISION_BEHAVIOR_HINT_FALLBACK)
             + TOOL_CONFIRMATION_HINT
+            + RESEARCH_HINT
         )
         
         if self.conversation_memory:
@@ -165,7 +291,6 @@ class LiveSession:
             "input_audio_transcription": {},
             "output_audio_transcription": {},
             "tools": [
-                {"google_search": {}},
                 {"function_declarations": FUNCTION_DECLARATIONS},
             ],
         }
@@ -270,17 +395,21 @@ class LiveSession:
                         if user_text:
                             self.on_log("user", user_text, None)
                             in_buf = ""
-                            if (not self.send_video) and VISION_TRIGGER_RE.search(user_text):
-                                asyncio.create_task(self._probe_vision(session, user_text))
                         if out_buf.strip():
-                            self.on_log("jarvan", out_buf.strip(), "live")
+                            import re
+                            clean_out = re.sub(r"<ctrl\d+>", "", out_buf).strip()
+                            if clean_out:
+                                self.on_log("jarvan", clean_out, "live")
                             out_buf = ""
 
                     if getattr(sc, "interrupted", False):
                         self.is_speaking = False
                         self.last_output_time = time.monotonic()
                         if out_buf.strip():
-                            self.on_log("jarvan", out_buf.strip() + " …", "live")
+                            import re
+                            clean_out = re.sub(r"<ctrl\d+>", "", out_buf).strip()
+                            if clean_out:
+                                self.on_log("jarvan", clean_out + " …", "live")
                             out_buf = ""
         except asyncio.CancelledError:
             pass
@@ -300,16 +429,73 @@ class LiveSession:
         for fc in function_calls:
             name = fc.name
             args = dict(fc.args) if fc.args else {}
-            impl = TOOL_IMPL.get(name)
-            if impl is None:
-                result = {"ok": False, "error": f"bilinmeyen tool: {name}"}
-            else:
-                self.on_log("system", f"[tool] {name}({args})", None)
+
+            if name == "search_web":
+                query = args.get("query", "")
+                self.on_log("system", f"[tool] search_web({args})", None)
                 try:
-                    result = await asyncio.to_thread(impl, args)
+                    raw = await asyncio.to_thread(hidden_search, query)
+                    if raw.get("ok"):
+                        self.last_search_results.clear()
+                        self.last_search_results.extend(raw.get("results") or [])
+                        summary = await self._summarize_search(query, raw)
+                        result = {
+                            "ok": True,
+                            "summary": summary,
+                            "count": len(self.last_search_results),
+                        }
+                    else:
+                        result = {"ok": False, "error": raw.get("error", "arama başarısız")}
                 except Exception as e:
                     result = {"ok": False, "error": str(e)}
                 self.on_log("system", f"[tool sonuç] {result}", None)
+            elif name == "see_screen":
+                self.on_log("system", "[tool] see_screen()", None)
+                try:
+                    description = await self._describe_screen()
+                    if description:
+                        result = {"ok": True, "screen": description}
+                    else:
+                        result = {"ok": False, "error": "ekran analizi başarısız"}
+                except Exception as e:
+                    result = {"ok": False, "error": str(e)}
+                self.on_log("system", f"[tool sonuç] {result}", None)
+            elif name == "open_result":
+                self.on_log("system", f"[tool] open_result({args})", None)
+                try:
+                    idx = int(args.get("index", 0))
+                    if not self.last_search_results:
+                        result = {"ok": False, "error": "henüz bir search_web sonucu yok"}
+                    elif idx < 1 or idx > len(self.last_search_results):
+                        result = {"ok": False, "error": f"geçersiz index: {idx} (1..{len(self.last_search_results)})"}
+                    else:
+                        target = self.last_search_results[idx - 1]
+                        url = target.get("href") or target.get("url") or ""
+                        if not url:
+                            result = {"ok": False, "error": "sonuçta URL yok"}
+                        else:
+                            raw_res = await asyncio.to_thread(open_url, url)
+                            if raw_res.get("ok"):
+                                result = {"ok": True, "note": "Sayfa tarayıcıda başarıyla açıldı."}
+                            else:
+                                result = raw_res
+                except Exception as e:
+                    result = {"ok": False, "error": str(e)}
+                self.on_log("system", f"[tool sonuç] {result}", None)
+            else:
+                impl = TOOL_IMPL.get(name)
+                if impl is None:
+                    result = {"ok": False, "error": f"bilinmeyen tool: {name}"}
+                else:
+                    self.on_log("system", f"[tool] {name}({args})", None)
+                    try:
+                        raw_result = await asyncio.to_thread(impl, args)
+                        result = raw_result.copy() if isinstance(raw_result, dict) else raw_result
+                        if isinstance(result, dict) and "url" in result:
+                            del result["url"]
+                    except Exception as e:
+                        result = {"ok": False, "error": str(e)}
+                    self.on_log("system", f"[tool sonuç] {result}", None)
 
             responses.append(types.FunctionResponse(
                 id=fc.id,
@@ -319,67 +505,122 @@ class LiveSession:
 
         await session.send_tool_response(function_responses=responses)
 
-    async def _probe_vision(self, session, user_text: str):
-        if self.vision_in_flight:
-            return
-        self.vision_in_flight = True
-        try:
-            from screen.capture import capture_screenshot_pil
 
-            self.on_log("system", "Ekran analiz ediliyor…", None)
-            img = await asyncio.to_thread(capture_screenshot_pil)
-            img.thumbnail((1280, 1280))
-            buf = io.BytesIO()
-            img.convert("RGB").save(buf, format="JPEG", quality=80)
-            jpeg = buf.getvalue()
+    async def _summarize_search(self, query: str, raw: dict) -> str:
+        """Ham arama sonucunu (Tavily answer + results[]) Flash Lite ile 2-4 cümleye indirir.
+        Live'a sadece temiz Türkçe metin gider; URL/JSON serialize edilmez → 1011 riski düşer."""
+        answer = (raw.get("answer") or "").strip()
+        results = raw.get("results") or []
 
-            prompt = (
-                f'Kullanıcı şunu söyledi: "{user_text}". '
-                "Ekranda net görüneni 2-3 cümle teknik Türkçe özetle. "
-                "Spekülasyon yok, sadece görülen. Araç/pencere adı, hata mesajı, "
-                "kod veya UI elementi varsa belirt."
-            )
+        def _domain(href: str) -> str:
+            try:
+                from urllib.parse import urlparse
+                host = urlparse(href).netloc
+                return host.replace("www.", "") if host else ""
+            except Exception:
+                return ""
 
-            description = ""
-            last_err: Exception | None = None
-            for model in VISION_MODELS:
-                try:
-                    response = await self.client.aio.models.generate_content(
-                        model=model,
-                        contents=[
-                            types.Part.from_bytes(data=jpeg, mime_type="image/jpeg"),
-                            prompt,
-                        ],
-                    )
-                    description = (response.text or "").strip()
-                    if description:
-                        break
-                except Exception as e:
-                    last_err = e
-                    msg = str(e).lower()
-                    if "quota" in msg or "429" in msg or "exhausted" in msg or "rate" in msg:
-                        continue
-                    raise
+        lines = []
+        if answer:
+            lines.append(f"Özet cevap: {answer}")
+        for i, r in enumerate(results[:3], start=1):
+            title = (r.get("title") or "").strip()
+            body = (r.get("body") or "").strip()
+            dom = _domain(r.get("href") or "")
+            lines.append(f"{i}. [{dom or title}] {title}\n{body}")
 
-            if not description:
-                self.on_log("error", f"Vision başarısız: {last_err}", None)
-                return
+        context = "\n\n".join(lines) if lines else "(sonuç boş)"
 
-            self.on_log("system", f"[ekran] {description}", None)
+        prompt = (
+            f"Kullanıcının sorusu: \"{query}\"\n\n"
+            f"Web arama sonuçları:\n{context}\n\n"
+            "Bu sonuçları sesli asistanın okuyacağı 2-4 cümlelik TEMİZ TÜRKÇE özete dönüştür. "
+            "Somut verileri (puan, fiyat, tarih, isim) BİREBİR koru. "
+            "Kaynak adlarını doğal cümle içinde kullan ('Metacritic'e göre 78 puan...'). "
+            "URL, link, parantez içi referans YAZMA. "
+            "Çelişen bilgiler varsa en güncel/güvenilir kaynağı tercih et. "
+            "Sonuç yoksa 'net bir bilgi bulamadım' de. Sadece özeti döndür, başka bir şey yazma."
+        )
 
-            await session.send_client_content(
-                turns=[{
-                    "role": "user",
-                    "parts": [{
-                        "text": f"[Gizli Sistem Bildirimi: Gözlerinle az önce şunları gördün: '{description}'] Lütfen az önce sorulan soruya doğrudan bu gördüklerini söylüyormuşçasına ('Ekranda ... var' şeklinde) cevap ver. Sana fotoğraf yollandığını vs söyleme."
-                    }],
-                }],
-                turn_complete=True,
-            )
-        except Exception as e:
-            self.on_log("error", f"Vision probe: {e}", None)
-        finally:
-            self.vision_in_flight = False
+        gen_config = types.GenerateContentConfig(
+            thinking_config=types.ThinkingConfig(thinking_budget=0),
+        )
+
+        last_err = None
+        for model in SUMMARY_MODELS:
+            try:
+                response = await self.client.aio.models.generate_content(
+                    model=model,
+                    contents=[prompt],
+                    config=gen_config,
+                )
+                text = (response.text or "").strip()
+                if text:
+                    return text
+            except Exception as e:
+                last_err = e
+                msg = str(e).lower()
+                if any(t in msg for t in ("quota", "429", "exhausted", "rate", "503", "unavailable", "overload")):
+                    continue
+                break
+
+        self.on_log("error", f"Arama özetleme başarısız: {last_err}", None)
+        if answer:
+            return answer[:400]
+        if results:
+            first = results[0]
+            body = (first.get("body") or "").strip()
+            return f"{first.get('title', '')}: {body[:250]}"
+        return "Arama sonucu bulunamadı."
+
+    async def _describe_screen(self) -> str:
+        from screen.capture import capture_screenshot_pil
+
+        self.on_log("system", "Ekran analiz ediliyor…", None)
+        img = await asyncio.to_thread(capture_screenshot_pil)
+        img.thumbnail((720, 720))
+        buf = io.BytesIO()
+        img.convert("RGB").save(buf, format="JPEG", quality=75)
+        jpeg = buf.getvalue()
+
+        prompt = (
+            "Ekranda net görüneni 2-3 cümle teknik Türkçe özetle. "
+            "Spekülasyon yok, sadece görülen. Araç/pencere adı, hata mesajı, "
+            "kod veya UI elementi varsa belirt."
+        )
+
+        vision_config = types.GenerateContentConfig(
+            thinking_config=types.ThinkingConfig(thinking_budget=0),
+        )
+
+        description = ""
+        last_err: Exception | None = None
+        for model in VISION_MODELS:
+            try:
+                response = await self.client.aio.models.generate_content(
+                    model=model,
+                    contents=[
+                        types.Part.from_bytes(data=jpeg, mime_type="image/jpeg"),
+                        prompt,
+                    ],
+                    config=vision_config,
+                )
+                description = (response.text or "").strip()
+                if description:
+                    break
+            except Exception as e:
+                last_err = e
+                msg = str(e).lower()
+                if any(t in msg for t in ("quota", "429", "exhausted", "rate", "503", "unavailable", "overload")):
+                    continue
+                raise
+
+        if not description:
+            self.on_log("error", f"Vision başarısız: {last_err}", None)
+            return ""
+
+        self.on_log("system", f"[ekran] {description}", None)
+        return description
 
     async def _video_loop(self, session):
         try:
