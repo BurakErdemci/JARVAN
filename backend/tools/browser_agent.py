@@ -5,9 +5,33 @@ import time
 import socket
 import asyncio
 import platform
+import threading
 import subprocess
 from collections import deque
 from pathlib import Path
+
+# Process-level guard: aynı anda SADECE 1 browser görevi çalışabilir.
+# LiveSession yeniden bağlanırsa instance'ın _inflight_tools set'i resetlenir, ama
+# eski görev hâlâ CDP üzerinde çalışıyordur. İki agent aynı BrowserSession'ı
+# paylaşamaz (browser_use 0.5.11 warning), yarışma hang yapıyor. Module scope
+# lock bunu engeller — hangi LiveSession olursa olsun aynı flag'i görür.
+_TASK_LOCK = threading.Lock()
+_TASK_RUNNING = False
+
+
+def _try_acquire_task_slot() -> bool:
+    global _TASK_RUNNING
+    with _TASK_LOCK:
+        if _TASK_RUNNING:
+            return False
+        _TASK_RUNNING = True
+        return True
+
+
+def _release_task_slot():
+    global _TASK_RUNNING
+    with _TASK_LOCK:
+        _TASK_RUNNING = False
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import GEMINI_API_KEY
@@ -186,9 +210,13 @@ async def run_browser_task(task: str) -> dict:
     if not GEMINI_API_KEY:
         return {"ok": False, "error": "GEMINI_API_KEY yok"}
 
+    if not _try_acquire_task_slot():
+        return {"ok": False, "error": "Başka bir tarayıcı görevi hâlâ çalışıyor, tamamlanınca tekrar dene."}
+
     try:
-        from browser_use import Agent, BrowserProfile
+        from browser_use import Agent, BrowserProfile, BrowserSession, Controller
     except Exception as e:
+        _release_task_slot()
         return {"ok": False, "error": f"browser-use import hatası: {e}"}
 
     full_task = _READ_ONLY_PREFIX + task.strip()
@@ -196,22 +224,32 @@ async def run_browser_task(task: str) -> dict:
     try:
         RotatingChatGoogle = _build_rotating_class()
         llm = RotatingChatGoogle(MODEL_POOL, GEMINI_API_KEY)
+        # extract_structured_data: prompt yasağına rağmen model çağırıyor, 80sn+ sürüp
+        # Live session'ı dondurabiliyor. Action seviyesinde sert disable.
+        controller = Controller(exclude_actions=["extract_structured_data"])
         # CDP :9222 açık değilse otomatik Opera GX'i debug modda aç —
         # kullanıcının gerçek profilini kullanır (Gmail login'leri falan orada).
         if not _cdp_up(CDP_PORT):
-            print(f"[browser_agent] CDP :{CDP_PORT} kapalı, Opera GX debug modda başlatılıyor", flush=True)
+            print(f"[browser_agent] CDP :{CDP_PORT} kapali, Opera GX debug modda baslatiliyor", flush=True)
             launch_res = launch_debug_browser(CDP_PORT)
             if not launch_res.get("ok"):
-                print(f"[browser_agent] debug launch başarısız: {launch_res.get('error')}", flush=True)
+                print(f"[browser_agent] debug launch basarisiz: {launch_res.get('error')}", flush=True)
 
+        agent_kwargs = {"task": full_task, "llm": llm, "controller": controller}
         if _cdp_up(CDP_PORT):
-            print(f"[browser_agent] CDP :{CDP_PORT}'e bağlanılıyor", flush=True)
-            profile = BrowserProfile(
+            print(f"[browser_agent] CDP :{CDP_PORT} uzerinden mevcut tarayiciya baglaniliyor", flush=True)
+            # NOT: browser-use 0.5.x — cdp_url BrowserSession'da, keep_alive BrowserProfile'da.
+            # keep_alive=False şart: True ise session.stop() hang ediyor, agent.run() dönmüyor,
+            # tool response gitmiyor, model sessiz kalıyor. CDP'de kullanıcı browser'ı biz
+            # launch etmediğimiz için stop() yalnızca bağlantıyı bırakır, browser açık kalır.
+            session = BrowserSession(
                 cdp_url=f"http://127.0.0.1:{CDP_PORT}",
-                keep_alive=True,
+                browser_profile=BrowserProfile(keep_alive=False),
             )
+            agent_kwargs["browser_session"] = session
         else:
             # Son çare: Opera GX yok veya açılmadı → fresh Chromium
+            print(f"[browser_agent] CDP kapali + debug launch basarisiz -> fresh profile spawn", flush=True)
             _cleanup_singleton_locks()
             profile_kwargs = {
                 "user_data_dir": BROWSER_PROFILE_DIR,
@@ -220,8 +258,8 @@ async def run_browser_task(task: str) -> dict:
             }
             if BROWSER_BINARY:
                 profile_kwargs["executable_path"] = BROWSER_BINARY
-            profile = BrowserProfile(**profile_kwargs)
-        agent = Agent(task=full_task, llm=llm, browser_profile=profile)
+            agent_kwargs["browser_profile"] = BrowserProfile(**profile_kwargs)
+        agent = Agent(**agent_kwargs)
 
         history = await asyncio.wait_for(agent.run(max_steps=MAX_STEPS), timeout=TASK_TIMEOUT_S)
 
@@ -255,11 +293,15 @@ async def run_browser_task(task: str) -> dict:
         import traceback
         print(f"[browser_agent] HATA:\n{traceback.format_exc()}", flush=True)
         return {"ok": False, "error": f"browser agent hatası: {type(e).__name__}: {e}"}
+    finally:
+        _release_task_slot()
 
 
 # --- Takeover modu: kullanıcının zaten açık tarayıcısına CDP ile bağlan ---
 
-CDP_PORT = 9222
+# 9223: user'ın normal Opera'sı (varsa) 9222 kullanıyor olabilir. Jarvan ayrı port
+# + ayrı profile ile çalışsın, user'ın normal browser'ına dokunma.
+CDP_PORT = 9223
 
 
 def _cdp_up(port: int) -> bool:
@@ -293,19 +335,22 @@ def _resolve_real_opera_profile() -> str | None:
 
 
 def launch_debug_browser(port: int = CDP_PORT) -> dict:
-    """Opera GX'i kullanıcının GERÇEK profili + --remote-debugging-port flag'iyle başlat.
-    Bu çağrıldıktan sonra kullanıcı normal gibi tarayıcıyı kullanır, ama Jarvan
-    istediği zaman CDP ile bağlanıp sekmeleri devralabilir."""
+    """Opera GX'i Jarvan'a ait ayrı bir profil + --remote-debugging-port ile başlat.
+    Kendi profil dizini kullanılır (BROWSER_PROFILE_DIR) — user'ın normal Opera'sı açıksa
+    aynı profile iki process açamadığı için (SingletonLock) çakışma olmasın diye ayrı tutuyoruz.
+    İLK AÇILIŞTA user bir kez Gmail vb. login'lerini bu Jarvan browser'ına yapar, sonra hep hazır."""
     if _cdp_up(port):
-        return {"ok": True, "result": "Tarayıcı zaten debug modda açık."}
+        return {"ok": True, "result": "Jarvan tarayıcısı zaten debug modda açık."}
     exe = BROWSER_BINARY
     if not exe:
         return {"ok": False, "error": "Opera GX bulunamadı (cross-platform path resolver boş döndü)"}
 
-    real_profile = _resolve_real_opera_profile()
-    cmd = [exe, f"--remote-debugging-port={port}"]
-    if real_profile:
-        cmd.append(f"--user-data-dir={real_profile}")
+    _cleanup_singleton_locks()
+    cmd = [
+        exe,
+        f"--remote-debugging-port={port}",
+        f"--user-data-dir={BROWSER_PROFILE_DIR}",
+    ]
     try:
         subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception as e:
@@ -315,10 +360,10 @@ def launch_debug_browser(port: int = CDP_PORT) -> dict:
     for _ in range(16):
         time.sleep(0.5)
         if _cdp_up(port):
-            return {"ok": True, "result": "Opera GX debug modunda açıldı, artık devralabilirim."}
+            return {"ok": True, "result": "Jarvan için ayrı Opera GX penceresi debug modunda açıldı."}
     return {"ok": False, "error": (
         "Tarayıcı başlatıldı ama debug port dinlemiyor. "
-        "Opera GX muhtemelen zaten başka bir pencerede açık — önce tamamen kapat, tekrar dene."
+        f"'{BROWSER_PROFILE_DIR}' profili başka bir process'te kilitli olabilir."
     )}
 
 
@@ -336,9 +381,13 @@ async def run_takeover_task(task: str) -> dict:
             "(veya 'tarayıcı başlat') de, tab'ların gelsin, sonra devralabilirim."
         )}
 
+    if not _try_acquire_task_slot():
+        return {"ok": False, "error": "Başka bir tarayıcı görevi hâlâ çalışıyor, tamamlanınca tekrar dene."}
+
     try:
-        from browser_use import Agent, BrowserProfile
+        from browser_use import Agent, BrowserProfile, BrowserSession, Controller
     except Exception as e:
+        _release_task_slot()
         return {"ok": False, "error": f"browser-use import hatası: {e}"}
 
     full_task = _READ_ONLY_PREFIX + task.strip()
@@ -346,12 +395,14 @@ async def run_takeover_task(task: str) -> dict:
     try:
         RotatingChatGoogle = _build_rotating_class()
         llm = RotatingChatGoogle(MODEL_POOL, GEMINI_API_KEY)
-        # cdp_url: mevcut browser'a bağlan, yeni spawn etme
-        profile = BrowserProfile(
+        controller = Controller(exclude_actions=["extract_structured_data"])
+        # keep_alive=False: stop() hang'ini önler. CDP'den bağlandığımız için
+        # bu flag browser'ı kapatmaz, sadece session'ın temiz kapanmasını sağlar.
+        session = BrowserSession(
             cdp_url=f"http://127.0.0.1:{CDP_PORT}",
-            keep_alive=True,  # takeover'da kullanıcının tarayıcısını kapatmayız
+            browser_profile=BrowserProfile(keep_alive=False),
         )
-        agent = Agent(task=full_task, llm=llm, browser_profile=profile)
+        agent = Agent(task=full_task, llm=llm, browser_session=session, controller=controller)
 
         history = await asyncio.wait_for(agent.run(max_steps=MAX_STEPS), timeout=TASK_TIMEOUT_S)
 
@@ -384,3 +435,5 @@ async def run_takeover_task(task: str) -> dict:
         import traceback
         print(f"[browser_agent] takeover HATA:\n{traceback.format_exc()}", flush=True)
         return {"ok": False, "error": f"takeover hatası: {type(e).__name__}: {e}"}
+    finally:
+        _release_task_slot()

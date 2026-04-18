@@ -13,6 +13,10 @@ APP_ALIASES = {
     "google chrome": {"win": "chrome.exe", "mac": "Google Chrome"},
     "firefox": {"win": "firefox.exe", "mac": "Firefox"},
     "edge": {"win": "msedge.exe", "mac": "Microsoft Edge"},
+    "opera": {"win": "opera.exe", "mac": "Opera"},
+    "opera gx": {"win": "opera.exe", "mac": "Opera GX"},
+    "tarayıcı": {"win": "opera.exe", "mac": "Opera GX"},
+    "tarayici": {"win": "opera.exe", "mac": "Opera GX"},
     "vscode": {"win": "Code.exe", "mac": "Visual Studio Code"},
     "visual studio code": {"win": "Code.exe", "mac": "Visual Studio Code"},
     "cursor": {"win": "Cursor.exe", "mac": "Cursor"},
@@ -44,7 +48,11 @@ def _resolve(name: str) -> str | None:
         return entry["win"] if IS_WIN else entry["mac"]
     if IS_MAC:
         return name.strip().title()
-    return name
+    # Windows: taskkill /IM tam isim ister, .exe yoksa ekle
+    raw = name.strip()
+    if IS_WIN and raw and not raw.lower().endswith(".exe"):
+        return raw + ".exe"
+    return raw
 
 
 def open_app(name: str) -> dict:
