@@ -17,7 +17,7 @@ from google.genai import types
 
 from tools.app_control import open_app, close_app
 from tools.whatsapp import send_whatsapp
-from tools.browser_agent import run_browser_task
+from tools.browser_agent import run_browser_task, run_takeover_task, launch_debug_browser
 from tools.browser import open_url, search_web, hidden_search
 from tools.mail import send_mail
 from tools.weather import get_weather
@@ -144,6 +144,37 @@ FUNCTION_DECLARATIONS = [
         },
     },
     {
+        "name": "browser_start",
+        "description": (
+            "Opera GX'i debug modunda (port 9222) başlatır. Kullanıcının gerçek profili yüklenir "
+            "(tab'lar, loginler, bookmarks hepsi yerinde) ama Jarvan istediği an CDP ile bağlanıp "
+            "sekmeleri devralabilir. Kullanıcı 'tarayıcıyı debug modda aç', 'tarayıcıyı jarvan modda aç', "
+            "'debug tarayıcı başlat' gibi dediğinde çağır. Opera zaten başka bir pencerede açıksa "
+            "hata döner — kullanıcıya 'önce Opera'yı kapat' demen gerekir."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "browser_takeover",
+        "description": (
+            "Kullanıcının ZATEN AÇIK tarayıcısını devralıp görevi orada tamamlar (örn: 'şu an baktığım "
+            "otobüs bileti sayfasında en ucuzunu bul', 'açık Gmail sekmesinde şu mailı oku'). "
+            "browser_task'tan farkı: yeni browser açmaz, kullanıcının kaldığı yerden devam eder. "
+            "Gereken: kullanıcının tarayıcısı debug modunda (port 9222) çalışıyor olmalı. Değilse "
+            "Jarvan otomatik debug modda yeni bir pencere başlatır (kullanıcının eski tab'ları orada DEĞİL). "
+            "Kullanım senaryosu: kullanıcı 'bunu sen devral', 'kaldığım yerden sen devam et', "
+            "'şu açık sayfayı senin halletmene bırakıyorum' derse. Aksi halde `browser_task` kullan. "
+            "30-90sn sürer. Çağırmadan önce 'tamam devralıyorum' de ve SUS."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "task": {"type": "string", "description": "Devralınan tarayıcıda yapılacak görev, Türkçe"},
+            },
+            "required": ["task"],
+        },
+    },
+    {
         "name": "send_mail",
         "description": (
             "Gmail compose ekranını prefilled açar. `auto_send=true` ise tarayıcı yüklenince otomatik gönderir (Cmd+Enter), "
@@ -233,6 +264,9 @@ TOOL_CONFIRMATION_HINT = (
     "Sonuç geldiğinde `result` alanındaki veriyi KELİMESİ KELİMESİNE kullan — kendi kafandan fiyat/veri UYDURMA. "
     "Halüsinasyon YASAK: result'ta '11.539 TL AJet' yazıyorsa sen de '11.539 TL AJet' dersin, '2500 TL civarında' demezsin. "
     "Sonuç geldikten sonra aynı görevi tekrar ÇAĞIRMA.\n"
+    "- `browser_takeover`: SADECE kullanıcı 'devral', 'kaldığım yerden devam et', 'sen halletmeye devam et', "
+    "'şu açık sayfayı sen hallet' gibi AÇIKÇA devralma istediğinde kullan. Normal araştırmada DEĞİL — o `browser_task`. "
+    "Sonuç kuralları browser_task ile aynı: result'u kelimesi kelimesine söyle, uydurma.\n"
     "- `send_whatsapp` ve `send_mail` (özellikle auto_send=true) VE dış dünyaya görünen her türlü aksiyon: ÖNCE ONAY AL. "
     "Mail için: 'X adresine \"konu\" başlıklı şu mesajı yazıp GÖNDERİYORUM (veya HAZIRLIYORUM): \"...\" — onaylıyor musun?' diye net bir cümle kur. "
     "WhatsApp için aynı kalıp. "
@@ -518,6 +552,33 @@ class LiveSession:
                         result = {"ok": False, "error": raw.get("error", "görev başarısız")}
                 except Exception as e:
                     self._inflight_tools.discard("browser_task")
+                    result = {"ok": False, "error": str(e)}
+                self.on_log("system", f"[tool sonuç] {result}", None)
+            elif name == "browser_start":
+                self.on_log("system", "[tool] browser_start()", None)
+                try:
+                    result = await asyncio.to_thread(launch_debug_browser)
+                except Exception as e:
+                    result = {"ok": False, "error": str(e)}
+                self.on_log("system", f"[tool sonuç] {result}", None)
+            elif name == "browser_takeover":
+                task = args.get("task", "")
+                if "browser_task" in self._inflight_tools or "browser_takeover" in self._inflight_tools:
+                    result = {"ok": False, "error": "Bir tarayıcı görevi zaten çalışıyor, lütfen bekle."}
+                    self.on_log("system", "[tool] browser_takeover in-flight, atlandı", None)
+                    responses.append(types.FunctionResponse(id=fc.id, name=name, response=result))
+                    continue
+                self._inflight_tools.add("browser_takeover")
+                self.on_log("system", f"[tool] browser_takeover({task[:80]}...)", None)
+                try:
+                    raw = await run_takeover_task(task)
+                    self._inflight_tools.discard("browser_takeover")
+                    if raw.get("ok"):
+                        result = {"ok": True, "result": raw.get("result", "")}
+                    else:
+                        result = {"ok": False, "error": raw.get("error", "takeover başarısız")}
+                except Exception as e:
+                    self._inflight_tools.discard("browser_takeover")
                     result = {"ok": False, "error": str(e)}
                 self.on_log("system", f"[tool sonuç] {result}", None)
             elif name == "see_screen":

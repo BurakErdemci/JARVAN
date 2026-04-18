@@ -2,8 +2,10 @@
 import os
 import sys
 import time
+import socket
 import asyncio
 import platform
+import subprocess
 from collections import deque
 from pathlib import Path
 
@@ -238,3 +240,132 @@ async def run_browser_task(task: str) -> dict:
         import traceback
         print(f"[browser_agent] HATA:\n{traceback.format_exc()}", flush=True)
         return {"ok": False, "error": f"browser agent hatası: {type(e).__name__}: {e}"}
+
+
+# --- Takeover modu: kullanıcının zaten açık tarayıcısına CDP ile bağlan ---
+
+CDP_PORT = 9222
+
+
+def _cdp_up(port: int) -> bool:
+    """Port dinleniyor mu (chromium --remote-debugging-port bu port'ta)."""
+    s = socket.socket()
+    s.settimeout(0.5)
+    try:
+        s.connect(("127.0.0.1", port))
+        return True
+    except OSError:
+        return False
+    finally:
+        s.close()
+
+
+def _resolve_real_opera_profile() -> str | None:
+    """Kullanıcının asıl Opera GX profil klasörü (tablari, loginleri, bookmarks burada).
+    Bu klasörü --user-data-dir olarak geçersek Opera normal gibi açılır, ama debug port dinler."""
+    system = platform.system()
+    if system == "Windows":
+        appdata = os.environ.get("APPDATA", "")
+        if appdata:
+            p = os.path.join(appdata, "Opera Software", "Opera GX Stable")
+            if os.path.isdir(p):
+                return p
+    elif system == "Darwin":
+        p = str(Path.home() / "Library" / "Application Support" / "com.operasoftware.OperaGX")
+        if os.path.isdir(p):
+            return p
+    return None
+
+
+def launch_debug_browser(port: int = CDP_PORT) -> dict:
+    """Opera GX'i kullanıcının GERÇEK profili + --remote-debugging-port flag'iyle başlat.
+    Bu çağrıldıktan sonra kullanıcı normal gibi tarayıcıyı kullanır, ama Jarvan
+    istediği zaman CDP ile bağlanıp sekmeleri devralabilir."""
+    if _cdp_up(port):
+        return {"ok": True, "result": "Tarayıcı zaten debug modda açık."}
+    exe = BROWSER_BINARY
+    if not exe:
+        return {"ok": False, "error": "Opera GX bulunamadı (cross-platform path resolver boş döndü)"}
+
+    real_profile = _resolve_real_opera_profile()
+    cmd = [exe, f"--remote-debugging-port={port}"]
+    if real_profile:
+        cmd.append(f"--user-data-dir={real_profile}")
+    try:
+        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception as e:
+        return {"ok": False, "error": f"tarayıcı başlatılamadı: {type(e).__name__}: {e}"}
+
+    # Port 8sn içinde hazır olsun
+    for _ in range(16):
+        time.sleep(0.5)
+        if _cdp_up(port):
+            return {"ok": True, "result": "Opera GX debug modunda açıldı, artık devralabilirim."}
+    return {"ok": False, "error": (
+        "Tarayıcı başlatıldı ama debug port dinlemiyor. "
+        "Opera GX muhtemelen zaten başka bir pencerede açık — önce tamamen kapat, tekrar dene."
+    )}
+
+
+async def run_takeover_task(task: str) -> dict:
+    """Zaten açık (debug modda) tarayıcıya bağlan, aktif tab'da görevi yürüt.
+    Kullanıcı tarayıcıda bir şeye başlamış, Jarvan kaldığı yerden devam etsin diye."""
+    if not task or not task.strip():
+        return {"ok": False, "error": "görev boş"}
+    if not GEMINI_API_KEY:
+        return {"ok": False, "error": "GEMINI_API_KEY yok"}
+
+    if not _cdp_up(CDP_PORT):
+        return {"ok": False, "error": (
+            "Tarayıcı debug modunda açık değil. Önce bana 'tarayıcıyı debug modda aç' "
+            "(veya 'tarayıcı başlat') de, tab'ların gelsin, sonra devralabilirim."
+        )}
+
+    try:
+        from browser_use import Agent, BrowserProfile
+    except Exception as e:
+        return {"ok": False, "error": f"browser-use import hatası: {e}"}
+
+    full_task = _READ_ONLY_PREFIX + task.strip()
+
+    try:
+        RotatingChatGoogle = _build_rotating_class()
+        llm = RotatingChatGoogle(MODEL_POOL, GEMINI_API_KEY)
+        # cdp_url: mevcut browser'a bağlan, yeni spawn etme
+        profile = BrowserProfile(
+            cdp_url=f"http://127.0.0.1:{CDP_PORT}",
+            keep_alive=True,  # takeover'da kullanıcının tarayıcısını kapatmayız
+        )
+        agent = Agent(task=full_task, llm=llm, browser_profile=profile)
+
+        history = await asyncio.wait_for(agent.run(max_steps=MAX_STEPS), timeout=TASK_TIMEOUT_S)
+
+        final_text = ""
+        try:
+            final_text = history.final_result() or ""
+        except Exception:
+            pass
+        if not final_text:
+            try:
+                extracted = history.extracted_content()
+                if extracted:
+                    final_text = str(extracted[-1])
+            except Exception:
+                pass
+
+        if final_text:
+            cut = final_text.find("\nAttachments:")
+            if cut != -1:
+                final_text = final_text[:cut].strip()
+            final_text = final_text[:600]
+
+        return {
+            "ok": True,
+            "result": final_text or "Görev tamamlandı ama metin sonuç yok.",
+        }
+    except asyncio.TimeoutError:
+        return {"ok": False, "error": f"görev {TASK_TIMEOUT_S}sn içinde bitmedi"}
+    except Exception as e:
+        import traceback
+        print(f"[browser_agent] takeover HATA:\n{traceback.format_exc()}", flush=True)
+        return {"ok": False, "error": f"takeover hatası: {type(e).__name__}: {e}"}
