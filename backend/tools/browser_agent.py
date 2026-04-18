@@ -45,6 +45,21 @@ def _resolve_profile_dir() -> str:
 BROWSER_BINARY = _resolve_browser_binary()
 BROWSER_PROFILE_DIR = _resolve_profile_dir()
 
+
+def _cleanup_singleton_locks():
+    """Önceki crash'lerden kalan SingletonLock/Cookie/Socket dosyalarını sil.
+    Windows'ta NTFS kilidi process ölse bile dosyayı bırakabiliyor → bir sonraki
+    launch 'profile locked' diyor ve temp profile'a düşüyor."""
+    if not os.path.isdir(BROWSER_PROFILE_DIR):
+        return
+    for name in ("SingletonLock", "SingletonCookie", "SingletonSocket"):
+        p = os.path.join(BROWSER_PROFILE_DIR, name)
+        try:
+            if os.path.exists(p) or os.path.islink(p):
+                os.remove(p)
+        except OSError:
+            pass
+
 # (model_id, rpm_limit) — free tier limitleri
 # Sıralama = RPD bütçesine göre (çok olanı önce tüket)
 # NOT: 2.5 flash / flash-lite bugünkü RPD'yi tükettiği için pool'dan çıkarıldı
@@ -54,7 +69,8 @@ MODEL_POOL = [
 ]
 SAFETY_MARGIN = 1  # limit - 1'de anahtarla, patlamayı önle
 
-TASK_TIMEOUT_S = 300
+TASK_TIMEOUT_S = 480
+MAX_STEPS = 15
 
 _READ_ONLY_PREFIX = (
     "SADECE BİLGİ TOPLAMA modu. Form gönderme, satın alma, hesap açma, mesaj atma YOK. "
@@ -81,9 +97,11 @@ _READ_ONLY_PREFIX = (
     "kullanıcı elle çözecek. Sonra sayfa yüklendiyse normal devam et. "
     "60sn sonra hâlâ captcha varsa done action ile 'captcha çözülmedi, vazgeçildi' de. "
 
-    # Sonuç
-    "Extract'ten sonra UZUN TABLO üretme; kullanıcının istediği kadar "
-    "(belirtmediyse en ucuz 3) sonucu done action'la KISA özetle. "
+    # Sonuç — extract_structured_data YASAK
+    "ÖNEMLİ: `extract_structured_data` KULLANMA — HTML parsing yavaş, timeout yiyor. "
+    "Uçuş/otel sonuçları sayfada görünür olduğunda DOĞRUDAN ekrandan oku, "
+    "gördüğün fiyatları `done` action'la KISA özetle (belirtmediyse en ucuz 3). "
+    "UZUN TABLO üretme, Attachments/JSON üretme — sesli asistan dinliyor. "
 
     # Diğer
     "Otel/konaklama: google.com/travel/hotels. Genel arama: google.com. "
@@ -159,52 +177,6 @@ def _build_rotating_class():
 
     return RotatingChatGoogle
 
-    def _pick(self):
-        now = time.monotonic()
-        # Hepsi için 60s eskiyi temizle
-        for entry in self._llms:
-            while entry["calls"] and now - entry["calls"][0] > 60.0:
-                entry["calls"].popleft()
-        # Kapasitesi olan ilki
-        for entry in self._llms:
-            if len(entry["calls"]) < entry["rpm"] - SAFETY_MARGIN:
-                return entry
-        # Hepsi dolu — en az dolu olanı seç, yakında free olacak
-        return min(self._llms, key=lambda e: len(e["calls"]))
-
-    def get_client(self):
-        return self._llms[0]["llm"].get_client()
-
-    async def ainvoke(self, messages, output_format=None, **kwargs):
-        last_err = None
-        tried = set()
-        for _ in range(len(self._llms)):
-            entry = self._pick()
-            if entry["model"] in tried:
-                # Hepsi doluysa pick aynı şeyi döndürebilir — kısa bekleyip zorla
-                await asyncio.sleep(2)
-                continue
-            tried.add(entry["model"])
-            entry["calls"].append(time.monotonic())
-            try:
-                print(f"[rotating-llm] -> {entry['model']} ({len(entry['calls'])}/{entry['rpm']} son 60s)", flush=True)
-                return await entry["llm"].ainvoke(messages, output_format=output_format, **kwargs)
-            except Exception as e:
-                msg = str(e).lower()
-                if "429" in msg or "resource_exhausted" in msg or "503" in msg or "unavailable" in msg:
-                    print(f"[rotating-llm] {entry['model']} düştü ({type(e).__name__}), diğerine geçiliyor", flush=True)
-                    # Kota doldu — o modeli 60s'lik pencereyi tamamen dolu kabul et
-                    now = time.monotonic()
-                    entry["calls"].clear()
-                    for _ in range(entry["rpm"]):
-                        entry["calls"].append(now)
-                    last_err = e
-                    continue
-                raise
-        if last_err:
-            raise last_err
-        raise RuntimeError("RotatingChatGoogle: havuzda kullanılabilir model yok")
-
 
 async def run_browser_task(task: str) -> dict:
     if not task or not task.strip():
@@ -220,20 +192,21 @@ async def run_browser_task(task: str) -> dict:
     full_task = _READ_ONLY_PREFIX + task.strip()
 
     try:
+        _cleanup_singleton_locks()
         RotatingChatGoogle = _build_rotating_class()
         llm = RotatingChatGoogle(MODEL_POOL, GEMINI_API_KEY)
         # Opera GX bulunamazsa browser-use default Chromium'a düşer
         profile_kwargs = {
             "user_data_dir": BROWSER_PROFILE_DIR,
             "headless": False,
-            "keep_alive": True,  # oturum korunur, login'ler kalıcı
+            "keep_alive": False,  # her görev sonunda kapat — SingletonLock'u önler (Windows)
         }
         if BROWSER_BINARY:
             profile_kwargs["executable_path"] = BROWSER_BINARY
         profile = BrowserProfile(**profile_kwargs)
         agent = Agent(task=full_task, llm=llm, browser_profile=profile)
 
-        history = await asyncio.wait_for(agent.run(), timeout=TASK_TIMEOUT_S)
+        history = await asyncio.wait_for(agent.run(max_steps=MAX_STEPS), timeout=TASK_TIMEOUT_S)
 
         final_text = ""
         try:
