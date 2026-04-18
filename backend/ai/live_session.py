@@ -229,7 +229,10 @@ TOOL_CONFIRMATION_HINT = (
     "- `open_app`, `close_app`, `open_url`: düşük riskli, doğrudan çağırabilirsin. "
     "Kullanıcı 'X sayfasını aç' derse önce 'tamam açıyorum' gibi kısa bir onay söyle, aracı çağır.\n"
     "- `search_web`: arka planda sessiz çalışır, ekranda bir şey açılmaz. 'Hemen araştırıyorum...' de, aracı çağır, sonucu bekle — 'açıyorum' DEME (çünkü hiçbir şey açılmıyor).\n"
-    "- `browser_task`: tarayıcıda uzun süren araştırma. Aracı bir kez çağır, sonuç gelene kadar BEKLE. Sonuç gelince HEMEN sesli özetle. Sonuç geldikten sonra aynı görevi tekrar ÇAĞIRMA.\n"
+    "- `browser_task`: tarayıcıda uzun süren araştırma (30-120sn sürebilir). Aracı BİR KEZ çağır, sonuç gelene kadar BEKLE. "
+    "Sonuç geldiğinde `result` alanındaki veriyi KELİMESİ KELİMESİNE kullan — kendi kafandan fiyat/veri UYDURMA. "
+    "Halüsinasyon YASAK: result'ta '11.539 TL AJet' yazıyorsa sen de '11.539 TL AJet' dersin, '2500 TL civarında' demezsin. "
+    "Sonuç geldikten sonra aynı görevi tekrar ÇAĞIRMA.\n"
     "- `send_whatsapp` ve `send_mail` (özellikle auto_send=true) VE dış dünyaya görünen her türlü aksiyon: ÖNCE ONAY AL. "
     "Mail için: 'X adresine \"konu\" başlıklı şu mesajı yazıp GÖNDERİYORUM (veya HAZIRLIYORUM): \"...\" — onaylıyor musun?' diye net bir cümle kur. "
     "WhatsApp için aynı kalıp. "
@@ -503,34 +506,14 @@ class LiveSession:
                 self._inflight_tools.add("browser_task")
                 self.on_log("system", f"[tool] browser_task({task[:80]}...)", None)
                 try:
-                    browser_future = asyncio.create_task(run_browser_task(task))
-
-                    async def _keepalive():
-                        while not browser_future.done():
-                            await asyncio.sleep(20)
-                            if not browser_future.done():
-                                try:
-                                    await session.send_client_content(
-                                        turns=[{"role": "user", "parts": [{"text": " "}]}],
-                                        turn_complete=False,
-                                    )
-                                except Exception:
-                                    pass
-
-                    ka_task = asyncio.create_task(_keepalive())
-                    try:
-                        raw = await browser_future
-                    finally:
-                        ka_task.cancel()
-                        self._inflight_tools.discard("browser_task")
-                        self._tool_cooldown["browser_task"] = time.monotonic() + 90
+                    # Keepalive yok — WebSocket kendi ping/pong yapıyor, boş text frame'leri
+                    # Gemini Live'ı confuse edip tool response sonrası halüsinasyona sebep oluyordu.
+                    raw = await run_browser_task(task)
+                    self._inflight_tools.discard("browser_task")
+                    self._tool_cooldown["browser_task"] = time.monotonic() + 90
 
                     if raw.get("ok"):
-                        result = {
-                            "ok": True,
-                            "result": raw.get("result", ""),
-                            "_instruction": "ARAŞTIRMA TAMAMLANDI. Bu sonucu HEMEN sesli özetle. browser_task'ı bir daha ÇAĞIRMA.",
-                        }
+                        result = {"ok": True, "result": raw.get("result", "")}
                     else:
                         result = {"ok": False, "error": raw.get("error", "görev başarısız")}
                 except Exception as e:
