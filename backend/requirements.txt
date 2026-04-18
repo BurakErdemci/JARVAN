@@ -38,3 +38,7 @@ requests>=2.31.0
 # Tools - Gmail OAuth
 google-auth-oauthlib>=1.2.0
 google-api-python-client>=2.120.0
+
+# Tools - WhatsApp & Browser
+pyautogui>=0.9.54
+duckduckgo_search>=5.0.0

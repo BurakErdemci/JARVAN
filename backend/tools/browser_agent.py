@@ -91,29 +91,73 @@ _READ_ONLY_PREFIX = (
 )
 
 
-class RotatingChatGoogle:
-    """Birden çok ChatGoogle instance'ı arasında rolling 60s RPM penceresine göre rotasyon yapar."""
+def _build_rotating_class():
+    """browser_use.llm.ChatGoogle'dan türeyen RotatingChatGoogle sınıfını çalışma zamanında oluşturur.
+    Agent, isinstance(llm, browser_use.llm sınıfları) kontrolü yaptığı için kalıtım şart."""
+    from browser_use.llm import ChatGoogle
 
-    def __init__(self, pool, api_key: str):
-        from browser_use import ChatGoogle
-        self._llms = []
-        for model_id, rpm in pool:
-            kwargs = {"model": model_id, "api_key": api_key}
-            # thinking_budget sadece Gemini'de var, Gemma'da yok
-            if model_id.startswith("gemini-"):
-                kwargs["thinking_budget"] = 0
-            llm = ChatGoogle(**kwargs)
-            self._llms.append({
-                "llm": llm,
-                "model": model_id,
-                "rpm": rpm,
-                "calls": deque(),  # timestamps son 60s
-            })
-        # Interface uyumluluğu için
-        self.model = pool[0][0]
-        self.model_name = pool[0][0]
-        self.provider = "google"
-        self.name = "rotating-google"
+    class RotatingChatGoogle(ChatGoogle):
+        """Birden çok ChatGoogle instance'ı arasında rolling 60s RPM penceresine göre rotasyon yapar."""
+
+        def __init__(self, pool, api_key: str):
+            first_model, _ = pool[0]
+            init_kwargs = {"model": first_model, "api_key": api_key}
+            if first_model.startswith("gemini-"):
+                init_kwargs["thinking_budget"] = 0
+            super().__init__(**init_kwargs)
+
+            self._pool_entries = []
+            for model_id, rpm in pool:
+                kwargs = {"model": model_id, "api_key": api_key}
+                if model_id.startswith("gemini-"):
+                    kwargs["thinking_budget"] = 0
+                llm = ChatGoogle(**kwargs)
+                self._pool_entries.append({
+                    "llm": llm,
+                    "model": model_id,
+                    "rpm": rpm,
+                    "calls": deque(),
+                })
+
+        def _pick(self):
+            now = time.monotonic()
+            for entry in self._pool_entries:
+                while entry["calls"] and now - entry["calls"][0] > 60.0:
+                    entry["calls"].popleft()
+            for entry in self._pool_entries:
+                if len(entry["calls"]) < entry["rpm"] - SAFETY_MARGIN:
+                    return entry
+            return min(self._pool_entries, key=lambda e: len(e["calls"]))
+
+        async def ainvoke(self, messages, output_format=None, **kwargs):
+            last_err = None
+            tried = set()
+            for _ in range(len(self._pool_entries)):
+                entry = self._pick()
+                if entry["model"] in tried:
+                    await asyncio.sleep(2)
+                    continue
+                tried.add(entry["model"])
+                entry["calls"].append(time.monotonic())
+                try:
+                    print(f"[rotating-llm] -> {entry['model']} ({len(entry['calls'])}/{entry['rpm']} son 60s)", flush=True)
+                    return await entry["llm"].ainvoke(messages, output_format=output_format, **kwargs)
+                except Exception as e:
+                    msg = str(e).lower()
+                    if "429" in msg or "resource_exhausted" in msg or "503" in msg or "unavailable" in msg:
+                        print(f"[rotating-llm] {entry['model']} düştü, diğerine geçiliyor", flush=True)
+                        now = time.monotonic()
+                        entry["calls"].clear()
+                        for _ in range(entry["rpm"]):
+                            entry["calls"].append(now)
+                        last_err = e
+                        continue
+                    raise
+            if last_err:
+                raise last_err
+            raise RuntimeError("RotatingChatGoogle: havuzda kullanılabilir model yok")
+
+    return RotatingChatGoogle
 
     def _pick(self):
         now = time.monotonic()
@@ -143,7 +187,7 @@ class RotatingChatGoogle:
             tried.add(entry["model"])
             entry["calls"].append(time.monotonic())
             try:
-                print(f"[rotating-llm] → {entry['model']} ({len(entry['calls'])}/{entry['rpm']} son 60s)", flush=True)
+                print(f"[rotating-llm] -> {entry['model']} ({len(entry['calls'])}/{entry['rpm']} son 60s)", flush=True)
                 return await entry["llm"].ainvoke(messages, output_format=output_format, **kwargs)
             except Exception as e:
                 msg = str(e).lower()
@@ -176,6 +220,7 @@ async def run_browser_task(task: str) -> dict:
     full_task = _READ_ONLY_PREFIX + task.strip()
 
     try:
+        RotatingChatGoogle = _build_rotating_class()
         llm = RotatingChatGoogle(MODEL_POOL, GEMINI_API_KEY)
         # Opera GX bulunamazsa browser-use default Chromium'a düşer
         profile_kwargs = {
@@ -203,9 +248,16 @@ async def run_browser_task(task: str) -> dict:
             except Exception:
                 pass
 
+        # Attachments / JSON bloklarını kes — model sesli asistan, kısa özet yeterli
+        if final_text:
+            cut = final_text.find("\nAttachments:")
+            if cut != -1:
+                final_text = final_text[:cut].strip()
+            final_text = final_text[:600]
+
         return {
             "ok": True,
-            "result": final_text[:2000] if final_text else "Görev tamamlandı ama metin sonuç yok.",
+            "result": final_text or "Görev tamamlandı ama metin sonuç yok.",
         }
     except asyncio.TimeoutError:
         return {"ok": False, "error": f"görev {TASK_TIMEOUT_S}sn içinde bitmedi"}

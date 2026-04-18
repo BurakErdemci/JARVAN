@@ -1,7 +1,17 @@
-import asyncio
-import json
 import sys
 import os
+
+# Child process'lere miras kalması için import'lardan önce set et
+os.environ["PYTHONIOENCODING"] = "utf-8"
+
+# Windows cp1252 → emoji/unicode logları kırar; UTF-8'e zorla
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+import asyncio
+import json
 import threading
 import queue
 from contextlib import asynccontextmanager

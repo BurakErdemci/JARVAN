@@ -53,16 +53,12 @@ def send_whatsapp(message: str, phone: str | None = None) -> dict:
     was_running = _whatsapp_running()
 
     try:
-        if sys.platform == "darwin":
-            subprocess.Popen(["open", url])
-        elif sys.platform.startswith("win"):
-            subprocess.Popen(["cmd", "/c", "start", "", url], shell=False)
-        else:
-            subprocess.Popen(["xdg-open", url])
+        import webbrowser
+        webbrowser.open(url)
     except Exception as e:
         return {"ok": False, "error": f"URL açılamadı: {e}"}
 
-    time.sleep(5.0 if not was_running else 2.5)
+    time.sleep(5.0 if not was_running else 3.0)
 
     try:
         if sys.platform == "darwin":
@@ -75,6 +71,14 @@ def send_whatsapp(message: str, phone: str | None = None) -> dict:
                 ["osascript", "-e", 'tell application "System Events" to keystroke return'],
                 capture_output=True, timeout=3,
             )
+        elif sys.platform.startswith("win"):
+            import pygetwindow as gw
+            import pyautogui
+            wins = [w for w in gw.getAllWindows() if "whatsapp" in w.title.lower()]
+            if wins:
+                wins[0].activate()
+                time.sleep(0.5)
+            pyautogui.press("enter")
         else:
             import pyautogui
             pyautogui.press("enter")

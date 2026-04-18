@@ -229,6 +229,7 @@ TOOL_CONFIRMATION_HINT = (
     "- `open_app`, `close_app`, `open_url`: düşük riskli, doğrudan çağırabilirsin. "
     "Kullanıcı 'X sayfasını aç' derse önce 'tamam açıyorum' gibi kısa bir onay söyle, aracı çağır.\n"
     "- `search_web`: arka planda sessiz çalışır, ekranda bir şey açılmaz. 'Hemen araştırıyorum...' de, aracı çağır, sonucu bekle — 'açıyorum' DEME (çünkü hiçbir şey açılmıyor).\n"
+    "- `browser_task`: tarayıcıda uzun süren araştırma. Aracı bir kez çağır, sonuç gelene kadar BEKLE. Sonuç gelince HEMEN sesli özetle. Sonuç geldikten sonra aynı görevi tekrar ÇAĞIRMA.\n"
     "- `send_whatsapp` ve `send_mail` (özellikle auto_send=true) VE dış dünyaya görünen her türlü aksiyon: ÖNCE ONAY AL. "
     "Mail için: 'X adresine \"konu\" başlıklı şu mesajı yazıp GÖNDERİYORUM (veya HAZIRLIYORUM): \"...\" — onaylıyor musun?' diye net bir cümle kur. "
     "WhatsApp için aynı kalıp. "
@@ -275,6 +276,8 @@ class LiveSession:
         self.is_speaking = False
         self.playback_end_time = 0.0
         self.last_search_results: list[dict] = search_cache if search_cache is not None else []
+        self._inflight_tools: set[str] = set()  # duplicate tool call koruması
+        self._tool_cooldown: dict[str, float] = {}  # son tamamlanma zamanı
         self.client = genai.Client(
             api_key=GEMINI_API_KEY,
             http_options={"api_version": "v1beta"},
@@ -397,13 +400,17 @@ class LiveSession:
 
                     tc = getattr(response, "tool_call", None)
                     if tc and getattr(tc, "function_calls", None):
-                        # Jarvan konuşmasını bitirsin — audio buffer'ı çalıp bitene kadar bekle.
-                        # Aksi halde tool_response sonrası model yeni yanıt üretip eski audio'yu keser.
                         wait_s = self.playback_end_time - time.monotonic()
                         if wait_s > 0:
                             await asyncio.sleep(wait_s + 0.15)
                         self.is_speaking = False
-                        await self._handle_tool_calls(session, tc.function_calls)
+                        # create_task: ses beklendi, audio tamam. Artık receive_loop
+                        # dönmeye devam eder → WebSocket ping-pong işlenir → session düşmez.
+                        task = asyncio.create_task(self._handle_tool_calls(session, tc.function_calls))
+                        task.add_done_callback(
+                            lambda t: self.on_log("error", f"tool task hata: {t.exception()}", None)
+                            if not t.cancelled() and t.exception() else None
+                        )
                         continue
 
                     sc = getattr(response, "server_content", None)
@@ -481,14 +488,53 @@ class LiveSession:
                 self.on_log("system", f"[tool sonuç] {result}", None)
             elif name == "browser_task":
                 task = args.get("task", "")
+                now = time.monotonic()
+                cooldown_until = self._tool_cooldown.get("browser_task", 0)
+                if "browser_task" in self._inflight_tools:
+                    result = {"ok": False, "error": "Tarayıcı görevi zaten çalışıyor, lütfen bekle."}
+                    self.on_log("system", "[tool] browser_task zaten in-flight, atlandı", None)
+                    responses.append({"id": fc.id, "name": name, "response": result})
+                    continue
+                if now < cooldown_until:
+                    result = {"ok": False, "error": f"Az önce aynı görev tamamlandı, sonucu sesli özetle."}
+                    self.on_log("system", f"[tool] browser_task cooldown ({cooldown_until - now:.0f}s kaldı), atlandı", None)
+                    responses.append({"id": fc.id, "name": name, "response": result})
+                    continue
+                self._inflight_tools.add("browser_task")
                 self.on_log("system", f"[tool] browser_task({task[:80]}...)", None)
                 try:
-                    raw = await run_browser_task(task)
+                    browser_future = asyncio.create_task(run_browser_task(task))
+
+                    async def _keepalive():
+                        while not browser_future.done():
+                            await asyncio.sleep(20)
+                            if not browser_future.done():
+                                try:
+                                    await session.send_client_content(
+                                        turns=[{"role": "user", "parts": [{"text": " "}]}],
+                                        turn_complete=False,
+                                    )
+                                except Exception:
+                                    pass
+
+                    ka_task = asyncio.create_task(_keepalive())
+                    try:
+                        raw = await browser_future
+                    finally:
+                        ka_task.cancel()
+                        self._inflight_tools.discard("browser_task")
+                        self._tool_cooldown["browser_task"] = time.monotonic() + 90
+
                     if raw.get("ok"):
-                        result = {"ok": True, "result": raw.get("result", "")}
+                        result = {
+                            "ok": True,
+                            "result": raw.get("result", ""),
+                            "_instruction": "ARAŞTIRMA TAMAMLANDI. Bu sonucu HEMEN sesli özetle. browser_task'ı bir daha ÇAĞIRMA.",
+                        }
                     else:
                         result = {"ok": False, "error": raw.get("error", "görev başarısız")}
                 except Exception as e:
+                    self._inflight_tools.discard("browser_task")
                     result = {"ok": False, "error": str(e)}
                 self.on_log("system", f"[tool sonuç] {result}", None)
             elif name == "see_screen":
