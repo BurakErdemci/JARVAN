@@ -12,6 +12,19 @@ from config import TAVILY_API_KEY
 IS_WIN = platform.system() == "Windows"
 IS_MAC = platform.system() == "Darwin"
 
+
+def _find_opera_gx_win() -> str | None:
+    local = os.environ.get("LOCALAPPDATA", "")
+    program_files = os.environ.get("PROGRAMFILES", r"C:\Program Files")
+    for path in [
+        os.path.join(local, r"Programs\Opera GX\opera.exe"),
+        os.path.join(program_files, r"Opera GX\opera.exe"),
+    ]:
+        if path and os.path.exists(path):
+            return path
+    return None
+
+
 def open_url(url: str, incognito: bool = False) -> dict:
     target = (url or "").strip()
     if not target:
@@ -23,7 +36,12 @@ def open_url(url: str, incognito: bool = False) -> dict:
     try:
         if incognito:
             if IS_WIN:
-                subprocess.Popen(["cmd", "/c", "start", "opera", "--private", target], shell=False)
+                exe = _find_opera_gx_win()
+                if exe:
+                    subprocess.Popen([exe, "--private", target])
+                else:
+                    # Opera GX yok — Edge InPrivate ile fallback
+                    subprocess.Popen(["cmd", "/c", "start", "msedge", "--inprivate", target], shell=False)
             elif IS_MAC:
                 subprocess.Popen(["open", "-n", "-a", "Opera GX", "--args", "--private", target])
             else:

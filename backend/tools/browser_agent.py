@@ -3,6 +3,7 @@ import os
 import sys
 import time
 import asyncio
+import platform
 from collections import deque
 from pathlib import Path
 
@@ -11,8 +12,38 @@ from config import GEMINI_API_KEY
 
 # Opera GX — kullanıcı burada site loginlerini bir kez yapar, Jarvan oturumu
 # miras alır (user_data_dir persist). Chrome yerine Opera → ana tarayıcını bozmaz.
-BROWSER_BINARY = "/Applications/Opera GX.app/Contents/MacOS/Opera"
-BROWSER_PROFILE_DIR = str(Path.home() / "Library" / "Application Support" / "jarvan-opera-profile")
+def _resolve_browser_binary() -> str | None:
+    system = platform.system()
+    if system == "Darwin":
+        candidates = ["/Applications/Opera GX.app/Contents/MacOS/Opera"]
+    elif system == "Windows":
+        local = os.environ.get("LOCALAPPDATA", "")
+        program_files = os.environ.get("PROGRAMFILES", r"C:\Program Files")
+        candidates = [
+            os.path.join(local, r"Programs\Opera GX\opera.exe"),
+            os.path.join(program_files, r"Opera GX\opera.exe"),
+            os.path.join(program_files, r"Opera GX\launcher.exe"),
+        ]
+    else:
+        candidates = ["/usr/bin/opera", "/snap/bin/opera"]
+    for path in candidates:
+        if path and os.path.exists(path):
+            return path
+    return None
+
+
+def _resolve_profile_dir() -> str:
+    system = platform.system()
+    if system == "Darwin":
+        return str(Path.home() / "Library" / "Application Support" / "jarvan-opera-profile")
+    if system == "Windows":
+        local = os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local"))
+        return os.path.join(local, "jarvan-opera-profile")
+    return str(Path.home() / ".config" / "jarvan-opera-profile")
+
+
+BROWSER_BINARY = _resolve_browser_binary()
+BROWSER_PROFILE_DIR = _resolve_profile_dir()
 
 # (model_id, rpm_limit) — free tier limitleri
 # Sıralama = RPD bütçesine göre (çok olanı önce tüket)
@@ -146,12 +177,15 @@ async def run_browser_task(task: str) -> dict:
 
     try:
         llm = RotatingChatGoogle(MODEL_POOL, GEMINI_API_KEY)
-        profile = BrowserProfile(
-            executable_path=BROWSER_BINARY,
-            user_data_dir=BROWSER_PROFILE_DIR,
-            headless=False,
-            keep_alive=True,  # oturum korunur, login'ler kalıcı
-        )
+        # Opera GX bulunamazsa browser-use default Chromium'a düşer
+        profile_kwargs = {
+            "user_data_dir": BROWSER_PROFILE_DIR,
+            "headless": False,
+            "keep_alive": True,  # oturum korunur, login'ler kalıcı
+        }
+        if BROWSER_BINARY:
+            profile_kwargs["executable_path"] = BROWSER_BINARY
+        profile = BrowserProfile(**profile_kwargs)
         agent = Agent(task=full_task, llm=llm, browser_profile=profile)
 
         history = await asyncio.wait_for(agent.run(), timeout=TASK_TIMEOUT_S)

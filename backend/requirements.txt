@@ -28,3 +28,13 @@ fastapi==0.115.12
 uvicorn==0.34.0
 websockets==14.2
 python-dotenv==1.1.0
+
+# Tools - browser agent (otonom tarayıcı)
+browser-use>=0.1.40
+
+# Tools - weather (HTTP)
+requests>=2.31.0
+
+# Tools - Gmail OAuth
+google-auth-oauthlib>=1.2.0
+google-api-python-client>=2.120.0
