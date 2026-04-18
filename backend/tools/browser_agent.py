@@ -194,18 +194,27 @@ async def run_browser_task(task: str) -> dict:
     full_task = _READ_ONLY_PREFIX + task.strip()
 
     try:
-        _cleanup_singleton_locks()
         RotatingChatGoogle = _build_rotating_class()
         llm = RotatingChatGoogle(MODEL_POOL, GEMINI_API_KEY)
-        # Opera GX bulunamazsa browser-use default Chromium'a düşer
-        profile_kwargs = {
-            "user_data_dir": BROWSER_PROFILE_DIR,
-            "headless": False,
-            "keep_alive": False,  # her görev sonunda kapat — SingletonLock'u önler (Windows)
-        }
-        if BROWSER_BINARY:
-            profile_kwargs["executable_path"] = BROWSER_BINARY
-        profile = BrowserProfile(**profile_kwargs)
+        # Kullanıcı debug modda tarayıcı açmışsa (browser_start), o tarayıcıyı
+        # yeniden kullan — yeni Chromium spawn etme, yeni tab aç sadece.
+        if _cdp_up(CDP_PORT):
+            print(f"[browser_agent] CDP :{CDP_PORT} açık, debug tarayıcıya bağlanılıyor", flush=True)
+            profile = BrowserProfile(
+                cdp_url=f"http://127.0.0.1:{CDP_PORT}",
+                keep_alive=True,
+            )
+        else:
+            _cleanup_singleton_locks()
+            # Opera GX bulunamazsa browser-use default Chromium'a düşer
+            profile_kwargs = {
+                "user_data_dir": BROWSER_PROFILE_DIR,
+                "headless": False,
+                "keep_alive": False,  # SingletonLock'u önler (Windows)
+            }
+            if BROWSER_BINARY:
+                profile_kwargs["executable_path"] = BROWSER_BINARY
+            profile = BrowserProfile(**profile_kwargs)
         agent = Agent(task=full_task, llm=llm, browser_profile=profile)
 
         history = await asyncio.wait_for(agent.run(max_steps=MAX_STEPS), timeout=TASK_TIMEOUT_S)
