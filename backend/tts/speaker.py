@@ -2,33 +2,29 @@ import asyncio
 import tempfile
 import os
 import edge_tts
-import sounddevice as sd
-import numpy as np
-from pydub import AudioSegment
+import pygame
 
 VOICE = "tr-TR-EmelNeural"
 
 
 async def _generate_speech(text: str) -> str:
-    """Edge TTS ile metni MP3'e çevirir, dosya yolunu döner."""
     tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
     tmp.close()
-
     communicate = edge_tts.Communicate(text, VOICE)
     await communicate.save(tmp.name)
     return tmp.name
 
 
 def speak(text: str):
-    """Metni seslendirir ve hoparlörden oynatır."""
     mp3_path = asyncio.run(_generate_speech(text))
-
     try:
-        audio = AudioSegment.from_mp3(mp3_path)
-        samples = np.array(audio.get_array_of_samples()).astype(np.float32) / 32768.0
-        sd.play(samples, samplerate=audio.frame_rate)
-        sd.wait()
+        pygame.mixer.init()
+        pygame.mixer.music.load(mp3_path)
+        pygame.mixer.music.play()
+        while pygame.mixer.music.get_busy():
+            pygame.time.Clock().tick(10)
     finally:
+        pygame.mixer.quit()
         os.unlink(mp3_path)
 
 

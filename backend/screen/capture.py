@@ -6,12 +6,18 @@ from PIL import Image
 from io import BytesIO
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import SCREEN_MONITOR_INDEX
+
+
+def _pick_monitor(sct):
+    idx = SCREEN_MONITOR_INDEX if SCREEN_MONITOR_INDEX < len(sct.monitors) else 1
+    return sct.monitors[idx]
 
 
 def capture_screenshot() -> str:
     """Ekran görüntüsü alır, base64 encoded JPEG string döner."""
     with mss.mss() as sct:
-        monitor = sct.monitors[1]  # 0 = tüm ekranlar, 1 = birinci ekran
+        monitor = _pick_monitor(sct)
         screenshot = sct.grab(monitor)
         img = Image.frombytes("RGB", screenshot.size, screenshot.bgra, "raw", "BGRX")
 
@@ -21,9 +27,9 @@ def capture_screenshot() -> str:
 
 
 def capture_screenshot_pil() -> Image.Image:
-    """Ekran görüntüsünü PIL Image olarak döner (Gemini için)."""
+    """Ekran görüntüsünü PIL Image olarak döner."""
     with mss.mss() as sct:
-        monitor = sct.monitors[1]
+        monitor = _pick_monitor(sct)
         screenshot = sct.grab(monitor)
         return Image.frombytes("RGB", screenshot.size, screenshot.bgra, "raw", "BGRX")
 

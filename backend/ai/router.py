@@ -1,22 +1,21 @@
 import re
 from PIL import Image
 
-from ai import local_llm, assistant
+from ai import assistant
+from modes.detector import get_active_mode
 
-
-# Ekran bağlamı gerektiren ipuçları — bunlar geçerse vision aktif.
 SCREEN_HINTS = [
     r"\bşu\b", r"\bbu\b", r"\bşura", r"\bbura", r"\borada\b", r"\bburada\b",
     r"\bekran", r"\bgörüyor", r"\bgörebiliyor",
     r"\bnerede\b", r"\bhangi\b",
 ]
 
-# Teknik/derinlikli cevap gerektiren ipuçları — cloud'a git (daha güçlü model).
 TECHNICAL_HINTS = [
     r"\bhata\b", r"\berror\b", r"\bexception\b", r"\bcrash\b",
     r"\bkod\b", r"\bfonksiyon\b", r"\bclass\b", r"\bblueprint\b",
     r"\bunreal\b", r"\bunity\b", r"\bshader\b", r"\bdebug\b",
     r"\bnasıl yap", r"\bneden çalış", r"\bçalışmıyor\b",
+    r"\bkontrol et\b", r"\baç\b", r"\bgönder\b", r"\byaz\b",
 ]
 
 
@@ -29,28 +28,39 @@ def _match(patterns, text):
 
 
 def route(transcript: str, screenshot: Image.Image) -> tuple[str, str]:
-    """Üç katmanlı yönlendirme:
-      1. Teknik soru → cloud (Gemini 3 Flash + vision)
-      2. Ekran bahsi → local vision (Qwen3-VL + screenshot)
-      3. Sade sohbet → local text (Qwen3-VL, ekran yok)
-
-    Returns: (label, response)
     """
+    Teknik/vision → Gemini Flash (güçlü, 20 RPD)
+    Sohbet/basit  → Gemini Flash Lite (500 RPD), Flash'a fallback
+    """
+    mode, system_prompt = get_active_mode()
     text = transcript.lower()
-    tech_hit = _match(TECHNICAL_HINTS, text)
     screen_hit = _match(SCREEN_HINTS, text)
+    tech_hit = _match(TECHNICAL_HINTS, text)
 
-    if tech_hit:
+    is_technical_mode = mode in ("unreal", "unity", "code")
+    needs_flash = screen_hit is not None or tech_hit is not None or is_technical_mode
+
+    if needs_flash:
+        use_vision = screen_hit is not None
         try:
-            return f"cloud:gemini-3-flash (teknik: '{tech_hit}')", assistant.ask(transcript, screenshot)
+            return f"flash [{mode}]", assistant.ask(transcript, screenshot if use_vision else None, system_prompt, use_lite=False)
         except Exception as e:
-            print(f"[router] cloud hata, local'e düşüyor: {e}")
-            return "local:qwen3-vl (cloud hata)", local_llm.ask(transcript, screenshot)
-
-    if screen_hit:
-        return f"local:qwen3-vl + vision (ekran: '{screen_hit}')", local_llm.ask(transcript, screenshot)
-
-    return "local:qwen3-vl (sohbet)", local_llm.ask(transcript)
+            if "quota" in str(e).lower() or "rate" in str(e).lower():
+                try:
+                    return f"flash-lite-fallback [{mode}]", assistant.ask(transcript, None, system_prompt, use_lite=True)
+                except Exception as e2:
+                    return "hata", f"Yanıt alınamadı: {e2}"
+            return "hata", f"Yanıt alınamadı: {e}"
+    else:
+        try:
+            return f"flash-lite [{mode}]", assistant.ask(transcript, None, system_prompt, use_lite=True)
+        except Exception as e:
+            if "quota" in str(e).lower() or "rate" in str(e).lower():
+                try:
+                    return f"flash-fallback [{mode}]", assistant.ask(transcript, None, system_prompt, use_lite=False)
+                except Exception as e2:
+                    return "hata", f"Yanıt alınamadı: {e2}"
+            return "hata", f"Yanıt alınamadı: {e}"
 
 
 if __name__ == "__main__":

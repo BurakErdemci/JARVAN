@@ -347,18 +347,18 @@ v0.1'deki screenshot sistemiyle başlanıyor, v0.2'de Gemini Live'a geçiliyor. 
 - [x] ~~Kokoro TTS~~ → Edge TTS (`tr-TR-EmelNeural`)
 - [ ] Minimal Electron UI (açık/kapalı toggle, aktif mod göstergesi, log)
 
-### v0.2 — Gemini Live (Video akışı)
-- [ ] Gemini Live API entegrasyonu (`gemini-3.1-flash-live-preview`)
-- [ ] Ses + ekran video stream — WebSocket pipeline
-- [ ] Timestamp senkronizasyonu (ses-video hizalaması)
-- [ ] VAD sisteminin Live API'a adaptasyonu
-- [ ] Gerçek zamanlı animasyon/gameplay analizi
+### v0.2 — Gemini Live (Video & Hybrid Stream)
+- [x] Gemini Live API entegrasyonu (`gemini-3.1-flash-live-preview`)
+- [x] Ses + Ekran video stream — (1 FPS WebSocket Sürekli Yayın Mimarisi)
+- [x] Proaktif mod kapalıyken 2.5 Flash Native (Audio) ile ucuz limitli kullanım sağlanması
+- [x] VAD olmadan direkt Live Session mikrofon stream yapısı kurulması
+- [x] Kullanıcı UI entegrasyonu (Mod göstergeleri, Proaktif Toggle, Log ekranı)
+- [x] Proaktif mod (Video yayını) anında aç/kapa yapıldığında sistemin kendini adapte etmesi
 
-### v0.3 — Kişiselleştirme
-- [ ] Gemini Flash Lite intent filter (daha akıllı filtre)
-- [ ] Kullanıcı bağlamı hafızası (SQLite)
-- [ ] Ollama fallback (internet yoksa local model)
-- [ ] Ayarlar ekranı (VAD threshold, dil, mod tercihleri)
+### v0.3 — Context & Hafıza (Kişiselleştirme)
+- [x] Kullanıcı bağlamı hafızası (Sürekli Hafıza - `main.py` içerisinden son 20 mesajın enjektesi)
+- [x] Modlar arası (Live/Proaktif) geçişte kopan bağlantılarda anlık durum kurtarması
+- [ ] Ayarlar ekranı (VAD threshold, dil, ses tipi değiştirme arayüzü)
 - [ ] Production build (PyInstaller + electron-builder)
 
 ### v0.4 — Computer Use (PC Kontrolü)
@@ -409,6 +409,55 @@ OpenClaw messaging platform üzerinden çalışıyor, ne gönderdiği belirsiz, 
 - [ ] Görev türü sınıflandırıcı (browser task mı, system task mı?)
 - [ ] Hata yönetimi (yanlış tıklama, sayfa yüklenmedi, popup çıktı)
 - [ ] Sandbox modu (tehlikeli görevleri önce simüle et)
+
+### v0.5 — Agentic Operations & Ultra-Low Latency Pipeline (Jarvis Paradigm)
+
+Bu fazın temel amacı; sistemin pasif bir "soru-cevap" asistanından çıkıp, **işletim sistemi seviyesinde otonom** (agentic) işlemleri **300ms** barajının altında tepki (R-T-T) vererek yürütebilmesidir. Başka bir AI ajanı projeyi devraldığında uygulanması gereken mimari prensipler şunlardır:
+
+**1. Architectural Shift: Function Calling (Tool Use)**
+- Gemini / Claude modellerinin `tools` veya `function_declarations` API'leri entegre edilecek.
+- Model, kullanıcı komutunu ("CS:GO aç") anladığında önce metin üretmeyecek; doğrudan `{"name": "execute_program", "args": {"target": "csgo.exe"}}` JSON'ı dönecek.
+- `main.py` üzerindeki event loop, bu JSON'u parse edip `pyautogui` veya `subprocess` ile paralel thread'de çalıştıracak.
+
+**2. Ultra-Low Latency & Native Speech (Gemini Live Advantage)**
+- Ağır lokal TTS modelleri (Chatterbox vb.) VRAM dar boğazına sebep olacağından kullanılmayacaktır. 
+- Hedef: Halihazırda var olan `Gemini 3.1 Flash Live` modelinin doğal, stream'li "Native Audio Dialog" sistemi sonuna kadar sömürülecektir. Google'ın kendi sunucularından gelen 200-300ms gecikmeli ses sentezi, sistemi sıfır VRAM harcayarak akıcı tutar.
+
+**3. Contextual Persona & Memory State**
+- Sistem, kullanıcının envanterini bilecek (Oynanan oyunlar, kurulu dizinler, favori yayın sahneleri). Bu statik context, system prompt içerisine JSON state olarak yerleştirilecek.
+- Örn: `{"user_context": {"favorite_game": "CS:GO", "obs_scene": "Gameplay"}}`
+
+### v0.6 — The Ultimate Agentic Vision (Gece Fikirleri & İleri Otonomi)
+
+Projeyi sadece talep üzerine yanıt veren bir robottan, inisiyatif alabilen "Demir Adam Jarvis" (Junior Developer + Remote Agent) seviyesine taşıyacak uzun vaadeli hedefler şunlardır:
+
+**1. "Context Aware" (Oto-Pilot) İnisiyatif Mekanizması**
+- Asistan, OS process listesini veya ekranı düzenli okuyarak durum değişikliklerini fark eder. 
+- *Senaryo:* Sistem Unreal Engine 5 açıldığını detect eder. Jarvan, sen hiçbir şey demeden: *"Günaydın Burak. Hata aldığımız C++ Inventory sınıfına geri döndüğünü görüyorum. Dökümanları yandayayım mı?"* şeklinde inisiyatifli iletişimi başlatır.
+
+**2. Shadow Coder (Görünmez İzleyici / Rewind Asistanı)**
+- Arka planda 1/30 FPS gibi çok yavaş bir oranla veya VSCode log hook'ları ile geçmişi (Visual/Textual Memory) ön bellekte tutar.
+- *Senaryo:* Hata yaptığında "10 dk önce neyi bozdum?" dersin. Jarvan yakın ekran datasını tarayıp *"Saat 14:15'te pointer'ı null bırakıp kayıta geçtin"* diyerek Rewind (Geri Sarma) yeteneği sergiler.
+
+**3. Otonom "Sandbox" Hata Çözücü (Junior Çırak)**
+- Derleme patladığında (Error 500 / Build Fail), Jarvan ana dosyalara müdahale etmeden önce geçici bir `Sandbox` klasörü yaratır. Kodu kendi CLI'ında defalarca dener, bozar ve dependency ekler. 
+- Build başarılı (Exit Code 0) verdiğinde sana *"Eksik kütüphaneleri hallettim, düzeltme hazır"* diyerek sonucu sunar.
+
+**4. Unreal Engine 5 "Otonom Editor" Kancası (The Holy Grail)**
+- UE5'in `Python Editor Scripting Plugin` mimarisi veya "Blueprint Node Text Copy-Paste" hack'i kullanılacaktır.
+- *Senaryo:* Jarvan Blueprint spagettisini analiz edip C++ `UCLASS/UFUNCTION` mimarisine dönüştürür. UE5 terminalinden veya Pano (Clipboard) emülasyonu ile düğümleri arayüze otomatik çizer.
+
+**5. Telegram Remote "Execute" Tünelleri**
+- `python-telegram-bot` kullanılarak dışarıdan sesli/yazılı talimat alıp PC'yi uyandıran (Wake-on-LAN) veya görev başlatan bir köprü tetikleyicisi. Jarvan işlemleri halledip "Ses Kaydı" (Voice Note) olarak Telegramdan rapor döner.
+
+**6. Hard-Coded Guardrails (Güvenlik Kalkanı)**
+- LLM'in halüsinasyon görüp sistemi silmesi gibi risklere karşı Python seviyesinde Regex ve System Path black-list duvarı (`safe_commands.py`)
+- *Kural:* Silme veya Kritik dosya yazma (Destructive Actions) içeren HER tetiklemede sistem `Human-in-the-loop` (İnsan Onayı İsteme) durumuna geçer ("Devam edeyim mi patron?").
+
+**7. Machine Learning & Vectorized Behavioral Persona**
+- Sadece Prompt tabanlı kişilik değil, **RAG (Retrieval-Augmented Generation)** kullanılarak gerçek bir Makine Öğrenmesi (Behavioral Pattern Analysis) süreci işletilecektir.
+- *Mimari:* Kullanıcının her etkileşimi, kod düzeltiş şekli veya gün içindeki tercihleri, açık kaynak bir "Embedding" modeli ile matematiksel vektörlere çevrilip lokal bir `ChromaDB` (Vektör Veritabanı) içerisine yazılır.
+- *Oto-Kişiselleştirme:* Asistan, "Senin Blueprint yazma stilini sevmediğini biliyorum, bu yüzden C++ ile yanıt hazırladım" gibi doğrudan M.L. hafızasından gelen saptamalar yapar. Aynı zamanda kullanıcı alışkanlıklarına göre Anomaly Detection (Örn: "Çok hızlı ve hatalı klavye kullanıyorsun, yoruldun mu?") yürütebilir.
 
 ---
 
