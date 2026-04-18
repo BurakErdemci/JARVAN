@@ -15,6 +15,64 @@ from config import GEMINI_API_KEY
 from google import genai
 from google.genai import types
 
+from tools.app_control import open_app, close_app
+from tools.whatsapp import send_whatsapp
+
+FUNCTION_DECLARATIONS = [
+    {
+        "name": "open_app",
+        "description": "Kullanıcının bilgisayarında bir uygulamayı veya oyunu açar. Örnek: 'not defteri aç', 'chrome aç', 'CS2 aç'.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Açılacak uygulamanın adı (not defteri, chrome, vscode, cs2, spotify vb.)",
+                },
+            },
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "close_app",
+        "description": "Açık bir uygulamayı kapatır. Örnek: 'chrome kapat', 'spotify kapat'.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Kapatılacak uygulamanın adı",
+                },
+            },
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "send_whatsapp",
+        "description": "Kullanıcının WhatsApp'ından kendisine veya belirtilen numaraya mesaj gönderir. Numara verilmezse .env'deki MY_WHATSAPP'a gider.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "description": "Gönderilecek mesaj metni",
+                },
+                "phone": {
+                    "type": "string",
+                    "description": "İsteğe bağlı hedef numara (ülke koduyla, + olmadan). Boş bırakılırsa kendine gider.",
+                },
+            },
+            "required": ["message"],
+        },
+    },
+]
+
+TOOL_IMPL = {
+    "open_app": lambda args: open_app(args.get("name", "")),
+    "close_app": lambda args: close_app(args.get("name", "")),
+    "send_whatsapp": lambda args: send_whatsapp(args.get("message", ""), args.get("phone")),
+}
+
 MODEL_NATIVE_AUDIO = "gemini-2.5-flash-native-audio-latest"
 MODEL_FLASH_LIVE = "gemini-3.1-flash-live-preview"
 
@@ -29,6 +87,16 @@ OUTPUT_COOLDOWN_S = 0.8  # Jarvan konuşurken + bittikten sonra kısa sessizlik 
 VISION_TRIGGER_RE = re.compile(
     r"\b(bak\w*|gör\w*|ekran\w*|şurd[ae]|şurad[ae]|burd[ae]|burad[ae])\b",
     re.IGNORECASE,
+)
+
+TOOL_CONFIRMATION_HINT = (
+    "\n\n[ARAÇ KULLANIM KURALLARI]\n"
+    "- `open_app` ve `close_app`: düşük riskli, doğrudan çağırabilirsin.\n"
+    "- `send_whatsapp` VE dış dünyaya görünen her türlü aksiyon: ÖNCE ONAY AL. "
+    "Önce 'X numarasına (veya kendine) şu mesajı atıyorum: \"...\" — onaylıyor musun?' diye net bir cümle kur. "
+    "Kullanıcı 'evet', 'tamam', 'at', 'gönder', 'onaylıyorum' gibi NET onay vermeden aracı ÇAĞIRMA. "
+    "'Belki', 'bilmiyorum', 'şey' gibi belirsiz cevaplar → tekrar sor.\n"
+    "- Kullanıcı 'iptal', 'dur', 'boşver' derse aracı çağırma, kısaca 'tamam iptal ettim' de."
 )
 
 VISION_BEHAVIOR_HINT_FALLBACK = (
@@ -69,7 +137,11 @@ class LiveSession:
 
     async def run(self):
         active_model = MODEL_FLASH_LIVE if self.send_video else MODEL_NATIVE_AUDIO
-        system_instruction = self.system_prompt + (VISION_BEHAVIOR_HINT_PROACTIVE if self.send_video else VISION_BEHAVIOR_HINT_FALLBACK)
+        system_instruction = (
+            self.system_prompt
+            + (VISION_BEHAVIOR_HINT_PROACTIVE if self.send_video else VISION_BEHAVIOR_HINT_FALLBACK)
+            + TOOL_CONFIRMATION_HINT
+        )
         
         if self.conversation_memory:
             mem_text = "\n".join([f"{m['role']}: {m['text']}" for m in self.conversation_memory])
@@ -92,6 +164,10 @@ class LiveSession:
             },
             "input_audio_transcription": {},
             "output_audio_transcription": {},
+            "tools": [
+                {"google_search": {}},
+                {"function_declarations": FUNCTION_DECLARATIONS},
+            ],
         }
 
         try:
@@ -170,6 +246,11 @@ class LiveSession:
                         await asyncio.to_thread(out_stream.write, response.data)
                         self.last_output_time = time.monotonic()
 
+                    tc = getattr(response, "tool_call", None)
+                    if tc and getattr(tc, "function_calls", None):
+                        await self._handle_tool_calls(session, tc.function_calls)
+                        continue
+
                     sc = getattr(response, "server_content", None)
                     if sc is None:
                         continue
@@ -213,6 +294,30 @@ class LiveSession:
             out_stream.stop_stream()
             out_stream.close()
             p.terminate()
+
+    async def _handle_tool_calls(self, session, function_calls):
+        responses = []
+        for fc in function_calls:
+            name = fc.name
+            args = dict(fc.args) if fc.args else {}
+            impl = TOOL_IMPL.get(name)
+            if impl is None:
+                result = {"ok": False, "error": f"bilinmeyen tool: {name}"}
+            else:
+                self.on_log("system", f"[tool] {name}({args})", None)
+                try:
+                    result = await asyncio.to_thread(impl, args)
+                except Exception as e:
+                    result = {"ok": False, "error": str(e)}
+                self.on_log("system", f"[tool sonuç] {result}", None)
+
+            responses.append(types.FunctionResponse(
+                id=fc.id,
+                name=name,
+                response=result,
+            ))
+
+        await session.send_tool_response(function_responses=responses)
 
     async def _probe_vision(self, session, user_text: str):
         if self.vision_in_flight:

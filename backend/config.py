@@ -6,6 +6,9 @@ load_dotenv()
 # Gemini
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
+# Kişisel
+MY_WHATSAPP = os.getenv("MY_WHATSAPP", "")  # Ülke koduyla, + ya da boşluk olmadan
+
 # VAD - Omi'den alınan production parametreleri
 VAD_GATE_PRE_ROLL_MS         = 300
 VAD_GATE_HANGOVER_MS         = 4000

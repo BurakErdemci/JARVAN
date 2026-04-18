@@ -34,6 +34,14 @@ screenshot.jpg
 models/
 *.bin
 *.gguf
+*.onnx
+*.onnx.json
+
+# Frontend build
+node_modules/
+dist/
+dist-electron/
+release/
 
 # Logs
 *.log

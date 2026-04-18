@@ -17,7 +17,12 @@ def get_active_window_title() -> str:
         return ""
     try:
         window = gw.getActiveWindow()
-        return window.title if window else ""
+        if not window:
+            return ""
+        title = window.title
+        if callable(title):
+            title = title()
+        return title or ""
     except Exception:
         return ""
 
