@@ -196,21 +196,27 @@ async def run_browser_task(task: str) -> dict:
     try:
         RotatingChatGoogle = _build_rotating_class()
         llm = RotatingChatGoogle(MODEL_POOL, GEMINI_API_KEY)
-        # Kullanıcı debug modda tarayıcı açmışsa (browser_start), o tarayıcıyı
-        # yeniden kullan — yeni Chromium spawn etme, yeni tab aç sadece.
+        # CDP :9222 açık değilse otomatik Opera GX'i debug modda aç —
+        # kullanıcının gerçek profilini kullanır (Gmail login'leri falan orada).
+        if not _cdp_up(CDP_PORT):
+            print(f"[browser_agent] CDP :{CDP_PORT} kapalı, Opera GX debug modda başlatılıyor", flush=True)
+            launch_res = launch_debug_browser(CDP_PORT)
+            if not launch_res.get("ok"):
+                print(f"[browser_agent] debug launch başarısız: {launch_res.get('error')}", flush=True)
+
         if _cdp_up(CDP_PORT):
-            print(f"[browser_agent] CDP :{CDP_PORT} açık, debug tarayıcıya bağlanılıyor", flush=True)
+            print(f"[browser_agent] CDP :{CDP_PORT}'e bağlanılıyor", flush=True)
             profile = BrowserProfile(
                 cdp_url=f"http://127.0.0.1:{CDP_PORT}",
                 keep_alive=True,
             )
         else:
+            # Son çare: Opera GX yok veya açılmadı → fresh Chromium
             _cleanup_singleton_locks()
-            # Opera GX bulunamazsa browser-use default Chromium'a düşer
             profile_kwargs = {
                 "user_data_dir": BROWSER_PROFILE_DIR,
                 "headless": False,
-                "keep_alive": False,  # SingletonLock'u önler (Windows)
+                "keep_alive": False,
             }
             if BROWSER_BINARY:
                 profile_kwargs["executable_path"] = BROWSER_BINARY
