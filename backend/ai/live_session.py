@@ -17,6 +17,7 @@ from google.genai import types
 
 from tools.app_control import open_app, close_app
 from tools.whatsapp import send_whatsapp
+from tools.browser_agent import run_browser_task
 from tools.browser import open_url, search_web, hidden_search
 from tools.mail import send_mail
 from tools.weather import get_weather
@@ -123,6 +124,24 @@ FUNCTION_DECLARATIONS = [
             "Aracı çağırmadan ekran hakkında konuşma."
         ),
         "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "browser_task",
+        "description": (
+            "Tarayıcıda otonom araştırma/bilgi toplama görevi yürütür (uçak bileti ara, ürün karşılaştır, siteden bilgi topla). "
+            "Gemini 3 Flash bir tarayıcı ajanı açar, adım adım tıklayarak görevi çözer, sonucu metin olarak sana döner. "
+            "ÇOK ÖNEMLİ: 30-90 saniye sürer. Çağırmadan önce 'tarayıcıda arıyorum, bir dakikanı alabilir' de ve SUS. "
+            "SADECE arama/okuma için — form gönderme, satın alma, hesap açma YAPAMAZ (güvenlik). "
+            "`task` alanını net ve spesifik Türkçe yaz: 'İstanbul-Londra 15 Mayıs tek yön en ucuz 3 uçuşu bul' gibi. "
+            "Basit arama için `search_web` yeter; `browser_task` sadece çoklu adım gerektiğinde (siteye gir, filtrele, karşılaştır)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "task": {"type": "string", "description": "Tarayıcı ajanının yapacağı görev, Türkçe doğal dille"},
+            },
+            "required": ["task"],
+        },
     },
     {
         "name": "send_mail",
@@ -254,6 +273,7 @@ class LiveSession:
         self.conversation_memory = conversation_memory or []
         self.last_output_time = 0.0
         self.is_speaking = False
+        self.playback_end_time = 0.0
         self.last_search_results: list[dict] = search_cache if search_cache is not None else []
         self.client = genai.Client(
             api_key=GEMINI_API_KEY,
@@ -367,12 +387,22 @@ class LiveSession:
 
                     if response.data:
                         self.is_speaking = True
-                        self.last_output_time = time.monotonic()
+                        now = time.monotonic()
+                        self.last_output_time = now
+                        # Bu chunk'ın çalma süresini playback_end_time'a ekle
+                        chunk_duration = len(response.data) / (OUTPUT_SAMPLE_RATE * 2)
+                        self.playback_end_time = max(self.playback_end_time, now) + chunk_duration
                         await asyncio.to_thread(out_stream.write, response.data)
                         self.last_output_time = time.monotonic()
 
                     tc = getattr(response, "tool_call", None)
                     if tc and getattr(tc, "function_calls", None):
+                        # Jarvan konuşmasını bitirsin — audio buffer'ı çalıp bitene kadar bekle.
+                        # Aksi halde tool_response sonrası model yeni yanıt üretip eski audio'yu keser.
+                        wait_s = self.playback_end_time - time.monotonic()
+                        if wait_s > 0:
+                            await asyncio.sleep(wait_s + 0.15)
+                        self.is_speaking = False
                         await self._handle_tool_calls(session, tc.function_calls)
                         continue
 
@@ -446,6 +476,18 @@ class LiveSession:
                         }
                     else:
                         result = {"ok": False, "error": raw.get("error", "arama başarısız")}
+                except Exception as e:
+                    result = {"ok": False, "error": str(e)}
+                self.on_log("system", f"[tool sonuç] {result}", None)
+            elif name == "browser_task":
+                task = args.get("task", "")
+                self.on_log("system", f"[tool] browser_task({task[:80]}...)", None)
+                try:
+                    raw = await run_browser_task(task)
+                    if raw.get("ok"):
+                        result = {"ok": True, "result": raw.get("result", "")}
+                    else:
+                        result = {"ok": False, "error": raw.get("error", "görev başarısız")}
                 except Exception as e:
                     result = {"ok": False, "error": str(e)}
                 self.on_log("system", f"[tool sonuç] {result}", None)
