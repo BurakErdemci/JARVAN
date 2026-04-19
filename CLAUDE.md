@@ -1,471 +1,506 @@
-# 🤖 Jarvan
+# Jarvan — AI Kişisel Asistan
 
-**Ekranını gören, sesini duyan, gerektiğinde konuşan kişisel AI asistan.**
+**Ekranını gören, sesini duyan, konuşan ve bilgisayarını kontrol eden kişisel AI asistan.**
 
-> Bir developer'ın kendi ihtiyacı için yaptığı şey. Ürün değil, araç.
-
----
-
-## 📍 Mevcut Durum (2026-04-17)
-
-**Geliştirme ortamı değişti:** Mac (16GB) → Windows (32GB RAM + RX 6750 XT 12GB VRAM + Ryzen 5 7500F). Mac'te local LLM RAM yetmediği için swap'e düşüyor, Windows'a taşındı.
-
-### Tamamlanan (v0.1 kısmı)
-
-- ✅ **Silero VAD** — `backend/audio/vad_gate.py` (Omi parametreleriyle: 300ms pre-roll, 4sn hangover, 0.65 threshold)
-- ✅ **faster-whisper** — `backend/audio/transcriber.py` (small model, int8, Türkçe)
-- ✅ **mss screenshot** — `backend/screen/capture.py`
-- ✅ **Gemini 3 Flash (cloud)** — `backend/ai/assistant.py` (`gemini-3-flash-preview`, vision destekli)
-- ✅ **Local LLM (Ollama)** — `backend/ai/local_llm.py` (Qwen3-VL:8b, vision destekli, `think=False`)
-- ✅ **3-Tier Router** — `backend/ai/router.py` (regex intent filter):
-  - Teknik kelime → cloud Gemini + vision
-  - Ekran bahsi → local Qwen3-VL + vision
-  - Sade sohbet → local Qwen3-VL (ekran yok)
-- ✅ **Edge TTS** — `backend/tts/speaker.py` (`tr-TR-EmelNeural`) — *Kokoro yerine Edge seçildi, daha doğal Türkçe*
-- ✅ **Pipeline test** — `backend/test_pipeline.py` (mikrofon → VAD → Whisper → router → TTS, uçtan uca)
-
-### Windows'a Geçiş İşleri
-
-1. Repoyu GitHub'dan Windows'a klonla
-2. Python 3.12 venv, `pip install -r backend/requirements.txt`
-3. Ollama Windows kur → `ollama pull qwen3-vl:8b`
-4. ROCm sürücüsü doğrula (AMD GPU ivmesi) — `ollama run qwen3-vl:8b` test
-5. `.env` oluştur → `GEMINI_API_KEY` ekle
-6. `python backend/test_pipeline.py`
-
-### Sıradaki İş (Windows'ta)
-
-- ⏳ **Mod sistemi** — aktif pencere tespiti (pygetwindow/pywin32) → dynamic system prompt (Unreal / Unity / Code / default)
-- ⏳ **Gemini Flash Lite intent filter** — regex yerine LLM tabanlı filtre
-- ⏳ **FastAPI backend** — `main.py` WebSocket handler (test_pipeline'ı server'a çevir)
-- ⏳ **Electron UI** — minimal toggle + mod göstergesi + log
-- ⏳ **Timestamp sync** — ses/ekran hizalaması (Omi'deki `DgWallMapper` pattern)
-
-### Bilinen Kararlar / Trade-off'lar
-
-- **Kokoro yerine Edge TTS** → Türkçe kalitesi daha iyi, local çalışıyor
-- **Qwen3-VL:8b + `think=False`** → thinking açıkken "selam nasılsın"a bile 1dk düşünüyor, voice assistant için kapatıldı
-- **Router regex tabanlı** → v0.1 için yeterli, v0.3'te Flash Lite'a geçiş planlı
-- **3-tier local-first** → cloud sadece teknik sorular için, günlük kullanım rate limit'e takılmaz
+Sahibi ve geliştirici: Burak Emre Erdemci · Windows (32GB RAM, RX 6750 XT 12GB, Ryzen 5 7500F)  
+Mac'te de çalışıyor (geliştirme ortamı), asıl hedef platform Windows.
 
 ---
 
-## Neden Jarvan?
+## Güncel Durum (2026-04-19)
 
-Unreal Engine'de Blueprint düğümlerinde takılıyorum. Kod yazarken bir şeyi anlayamıyorum. Google'da arıyorum, Stack Overflow'a bakıyorum, ChatGPT'ye soruyorum — her seferinde context kayboluyor, ekranımı göremiyorlar, ne yaptığımı bilmiyorlar.
+### Tamamlanan (Production)
 
-İstediğim şey basit: ekranıma bakan, ne yaptığımı anlayan, sesimi duyan ve **gerektiğinde** konuşan bir sistem. Sürekli yorum yapmayan ama takıldığımda orada olan biri.
+- ✅ **Gemini Live native audio** — `gemini-3.1-flash-live-preview` ile gerçek zamanlı ses dialog
+- ✅ **Tool sistemi** (12 araç): app aç/kapat, hava durumu, web arama, URL aç, Gmail, WhatsApp, ekran görme, browser ajan
+- ✅ **Proaktif mod** — `send_video=True` ile 1 FPS ekran stream, Gemini Live ekranı sürekli izliyor
+- ✅ **Conversation memory** — Session resetlendiğinde son 20 mesaj system prompt'a inject ediliyor
+- ✅ **Mod sistemi** — Aktif pencereye göre system prompt değişiyor (Unreal / Unity / Code / Default)
+- ✅ **Search pipeline** — Tavily → DDGS fallback → Flash Lite özetleme → Live'a temiz metin
+- ✅ **Browser agent** — browser-use 0.5.x, Opera GX, CDP takeover, process-level task lock
+- ✅ **Mail** — Gmail OAuth API (auto_send=true: direkt gönderir, false: compose URL açar)
+- ✅ **WhatsApp** — URL scheme + pyautogui Enter (platform fark etmeksizin)
+- ✅ **Electron UI** — Ses aç/kapat, live mod, proaktif mod toggle, mod göstergesi, log ekranı
+- ✅ **VAD pipeline** — Silero VAD (legacy mod, Live mod kullanılmıyor)
+- ✅ **Windows UTF-8 fix** — stdout/stderr reconfigure, PYTHONIOENCODING=utf-8
 
-Omi gibi projeler var ama güvenmiyorum — ne gönderdiğini bilmiyorsun, verilen bilgisayarında ne kadar kalıyor belli değil.
+### Açık Sorunlar
 
-Jarvan tamamen kendi bilgisayarımda çalışıyor. STT local, VAD local, TTS local. Sadece AI çağrısı buluta gidiyor, o da sadece gerçekten gerektiğinde.
+- ⚠️ **Browser agent — Windows Chrome açıyor**: `browser_task` CDP :9223'e bağlanamayınca fresh Chromium spawn ediyor; kullanıcının login'leri olmadığı için Gmail vb. çalışmıyor. Root cause belirsiz (Opera GX bulunamıyor mu, `launch_debug_browser` sessiz mi patlıyor?). Test komutu → bkz. Debug bölümü.
+- ⚠️ **VAD modu (legacy)**: Live kapalıyken aktif olan Whisper+VAD pipeline'ı maintenance modunda; ağırlıklı kullanım Live üzerinden.
+
+### Planlanan
+
+- ⏳ Ayarlar ekranı (VAD threshold, ses, dil)
+- ⏳ Production build (PyInstaller + electron-builder)
+- ⏳ pyautogui görev executor (mouse/keyboard kontrolü)
+- ⏳ Computer use (v0.4) — browser-use + pyautogui + onay mekanizması
+- ⏳ Gemini function calling ajanı (v0.5) — araç çağrısını JSON olarak döndür, metin üretme
 
 ---
 
-## Mimari Özeti
+## Mimari
 
 ```
-Mikrofon
-    ↓
-Silero VAD (local — konuşma var mı?)
-    ↓ konuşma tespit edildi
-faster-whisper (local — metne çevir)
-    ↓ cümle tamamlandı
-Intent Filter (local — AI'a gönderilmeli mi?)
-    ↓ evet
-mss → ekran görüntüsü al
-    ↓
-Gemini 3 Flash API (ses transkripsiyonu + ekran = yanıt)
-    ↓
-Kokoro TTS (local — yanıtı seslendir)
+Kullanıcı (ses)
+      ↓
+PyAudio mikrofon akışı (16kHz mono PCM)
+      ↓
+LiveSession._mic_loop() — ekoya karşı cooldown (0.8s)
+      ↓
+Gemini Live WebSocket (gemini-3.1-flash-live-preview)
+      ↓                          ↑
+  ses yanıtı (PCM 24kHz)    tool_call gelirse → _handle_tool_calls()
+      ↓
+PyAudio output stream
 ```
 
-**Katmanlı aktivasyon:** Gemini'ye sadece intent filter "bunu görmeli" dediğinde gidiliyor. Sessizlik, dolgu sesler, kısa onaylar hiçbir zaman API'a gitmiyor.
-
----
-
-## Teknoloji Stack'i
-
-### Ses Katmanı (Tamamen Local)
-| Teknoloji | Görev | Neden |
-|-----------|-------|-------|
-| **Silero VAD** | Konuşma tespiti | Omi'nin production-tested mimarisi, 16 model instance pool, SPEECH→HANGOVER→SILENCE state machine |
-| **faster-whisper** | Speech-to-text | Whisper'ın 4x hızlı versiyonu, Türkçe destekli, gerçek zamanlı streaming modu |
-
-### Görsel Katman (Tamamen Local)
-| Teknoloji | Görev | Neden |
-|-----------|-------|-------|
-| **mss** | Ekran görüntüsü | Cross-platform, 3ms/screenshot, bağımlılık yok |
-
-### AI Katmanı (Bulut — Sadece Gerektiğinde)
-| Teknoloji | Görev | Neden |
-|-----------|-------|-------|
-| **Gemini 3 Flash** | Ana AI beyni | Vision destekli, ücretsiz tier (5 RPM), Unity AI'da test edildi |
-| **Gemini 3.1 Flash Lite** | Intent filter | 15 RPM, ucuz filtre katmanı — "bu API'a gitsin mi?" kararı |
-
-### Ses Üretim Katmanı (Tamamen Local)
-| Teknoloji | Görev | Neden |
-|-----------|-------|-------|
-| **Kokoro TTS** | Text-to-speech | 2025'te çıktı, local çalışıyor, insan sesi kalitesinde, ücretsiz |
-
-### Uygulama Katmanı
-| Teknoloji | Görev | Neden |
-|-----------|-------|-------|
-| **Python + FastAPI** | Backend | Zaten bilinen stack, async, Silero + Whisper entegrasyonu kolay |
-| **Electron** | Desktop UI | Unity Architect AI'dan gelen deneyim, cross-platform build |
-
----
-
-## VAD Mimarisi (Omi'den Öğrenilen)
-
-Omi kaynak kodundan alınan production-tested parametreler:
-
-```python
-VAD_GATE_PRE_ROLL_MS        = 300    # Konuşmadan 300ms önceyi de yakala
-VAD_GATE_HANGOVER_MS        = 4000   # Sessizlik sonrası 4sn daha "konuşuyor" say
-VAD_GATE_SPEECH_THRESHOLD   = 0.65   # Silero speech probability eşiği
-VAD_GATE_FINALIZE_SILENCE_MS = 300   # Bu kadar sessizlik → cümle bitti
+**Proaktif mod aktifse:**
+```
+LiveSession._video_loop() — 1 FPS, 720x720 JPEG → Gemini Live WebSocket
 ```
 
-State machine:
+**Live modu kapalıysa (legacy):**
 ```
-SILENCE → (ses algılandı) → SPEECH → (ses kesildi) → HANGOVER → SILENCE
-                                                        ↑
-                                           4sn bekle, cümle devam edebilir
+Mikrofon → VADGate (Silero) → faster-whisper → router.py → Gemini Flash/Lite → Edge TTS
 ```
 
-Neden 4 saniye hangover? Çünkü "şey... bunu nasıl yapıyorum ki" gibi cümlelerde insan doğal olarak duraklıyor. 4 saniye beklemeden kesilirse cümle ortasında transkripsiyona giriyor.
-
 ---
 
-## Token Optimizasyonu
-
-### Katmanlı Savunma
-
-**Katman 1 — Silero VAD (sıfır maliyet)**
-Sessizlik, arka plan gürültüsü, "hmm", "aa" gibi dolgu sesler hiçbir zaman Whisper'a gitmiyor.
-
-**Katman 2 — faster-whisper (sıfır maliyet)**
-Sadece gerçek konuşma segmentleri transkribe ediliyor. Token yok, API yok.
-
-**Katman 3 — Intent Filter (Gemini 3.1 Flash Lite)**
-Transkripsiyon tamamlandıktan sonra ucuz bir filtre: "bu Gemini 3 Flash'a gönderilmeli mi?"
-
-Geçmeyen örnekler:
-- "tamam", "evet", "oldu" → ignore
-- "aa", "hmm" → ignore
-- kısa onaylar → ignore
-
-Geçen örnekler:
-- soru içeren cümleler
-- "nasıl", "neden", "ne", "anlamadım" içeren ifadeler
-- hata mesajı görüntüde + sesli tepki
-
-**Katman 4 — Gemini 3 Flash (API)**
-Sadece buraya kadar gelen içerik pahalı modele ulaşıyor. Ses transkripsiyonu + ekran görüntüsü birlikte gönderiliyor.
-
-### Rate Limit Hesabı
-
-Günde 2 saat aktif kullanım, katmanlı filtre sonrası ~50-100 Gemini 3 Flash çağrısı.
-Ücretsiz tier: günde 500 istek. Fazlasıyla yeterli.
-
----
-
-## Ekran + Ses Timestamp Hizalaması
-
-Omi kaynak kodunda `DgWallMapper` sınıfı: VAD sessizliği atladığında STT'nin timestamp'leri gerçek zamandan kayıyor.
-
-Jarvan'da da aynı sorun olacak: VAD "konuşma var" dediğinde ekran görüntüsü alınıyor, ama VAD'ın timestamp'i ile gerçek zaman arasında küçük bir kayma var. Bu bileşen baştan planlanmalı.
-
----
-
-## Omi'den Öğrenilenler
-
-BasedHardware/omi kaynak kodu analiz edildi. Kritik bulgular:
-
-1. **VAD olmadan maliyet kontrolsüz büyür** — Silero VAD active modda tüm sessizliği kesiyor, Deepgram'a sadece gerçek konuşma gidiyor
-2. **Hangover mekanizması kritik** — 4sn beklemeden cümle ortasında kesiyorsun
-3. **should_discard() pattern'i çal** — ucuz modelle ön filtre, pahalı modeli koru
-4. **Timestamp remapping kaçınılmaz** — VAD + STT + ekran üç farklı zaman ekseninde çalışıyor
-5. **Model pool şart** — tek global Silero instance bottleneck yaratıyor, Omi 16 kopya kullanıyor
-
----
-
-## Klasör Yapısı (Planlanan)
+## Dosya Yapısı
 
 ```
 jarvan/
+├── CLAUDE.md                          # Bu dosya
 ├── backend/
-│   ├── main.py                    # FastAPI + WebSocket handler
-│   ├── audio/
-│   │   ├── vad_gate.py            # Silero VAD streaming gate (Omi pattern)
-│   │   ├── transcriber.py         # faster-whisper entegrasyonu
-│   │   └── recorder.py            # Mikrofon akışı yönetimi
-│   ├── screen/
-│   │   ├── capture.py             # mss screenshot
-│   │   └── timestamp_sync.py      # Ses-ekran timestamp hizalaması
+│   ├── main.py                        # FastAPI + WebSocket server, Pipeline yönetimi
+│   ├── config.py                      # Tüm sabitler, .env yükleme
+│   ├── contacts.json                  # İsim → email rehberi
+│   ├── contacts_phones.json           # İsim → telefon rehberi
+│   ├── credentials.json               # Gmail OAuth client secret (gitignore'da)
+│   ├── token.json                     # Gmail OAuth token (gitignore'da)
+│   ├── requirements.txt
 │   ├── ai/
-│   │   ├── intent_filter.py       # Gemini Flash Lite — gönderilmeli mi?
-│   │   ├── assistant.py           # Gemini 3 Flash — ses + ekran → yanıt
-│   │   └── providers.py           # Multi-provider (Gemini, fallback Ollama)
+│   │   ├── assistant.py               # Legacy: Gemini Flash/Lite tek çağrı (VAD modu için)
+│   │   ├── live_session.py            # Gemini Live — asıl AI motoru, tüm tool'lar burada
+│   │   └── router.py                  # Legacy: Teknik/sohbet intent router (VAD modu için)
+│   ├── audio/
+│   │   ├── vad_gate.py                # Silero VAD — SILENCE/SPEECH/HANGOVER/FINALIZE state machine
+│   │   └── transcriber.py             # faster-whisper (small, int8, Türkçe)
+│   ├── screen/
+│   │   └── capture.py                 # mss ekran yakala → PIL Image veya base64 JPEG
 │   ├── tts/
-│   │   └── kokoro.py              # Kokoro TTS — yanıtı seslendir
-│   └── config.py                  # VAD parametreleri, threshold'lar
+│   │   └── speaker.py                 # Edge TTS (tr-TR-EmelNeural) — legacy VAD modu için
+│   ├── modes/
+│   │   ├── detector.py                # pygetwindow → aktif pencere → mod adı
+│   │   └── prompts.py                 # UNREAL/UNITY/CODE/DEFAULT system prompt metinleri
+│   └── tools/
+│       ├── app_control.py             # open_app, close_app — cross-platform alias tablosu
+│       ├── browser.py                 # open_url, search_web (Google), hidden_search (Tavily→DDGS)
+│       ├── browser_agent.py           # browser-use ajan — otonom tarayıcı görevi
+│       ├── contacts.py                # contacts.json / contacts_phones.json lookup
+│       ├── mail.py                    # Gmail OAuth gönderim + compose URL fallback
+│       ├── weather.py                 # Hava durumu (requests tabanlı)
+│       └── whatsapp.py                # whatsapp:// URL scheme + pyautogui Enter
 ├── frontend/
-│   ├── main/
-│   │   ├── background.ts          # Electron ana süreç
-│   │   └── preload.ts             # IPC köprüsü
-│   └── renderer/
-│       └── pages/
-│           └── home.tsx           # Ana UI (durum göstergesi, log, ayarlar)
-├── docker-compose.yml
-├── requirements.txt
-└── JARVAN.md                      # Bu dosya
+│   ├── electron/
+│   │   ├── main.ts                    # Electron ana process — backend spawn, IPC
+│   │   └── preload.ts                 # IPC köprüsü (contextBridge)
+│   └── src/
+│       ├── App.tsx                    # Ana UI bileşeni
+│       ├── types.ts                   # WebSocket mesaj tipleri
+│       ├── hooks/                     # useWebSocket vb.
+│       └── components/                # UI parçaları
 ```
 
 ---
 
-## Geliştirme Notları
+## Modüller — Detaylı
 
-### VAD Başlatma
+### `backend/main.py`
+
+FastAPI + WebSocket server. `Pipeline` sınıfı ses pipeline'ını ayrı thread'de yönetir.
+
+**WebSocket mesajları (frontend → backend):**
+- `{"type": "start"}` → pipeline.start()
+- `{"type": "stop"}` → pipeline.stop()
+- `{"type": "toggle_live", "enabled": bool}` → Live ↔ VAD geçişi
+- `{"type": "toggle_proactive", "enabled": bool}` → 1 FPS video stream aç/kapat
+
+**WebSocket mesajları (backend → frontend):**
+- `{"type": "status", "running": bool, "live": bool, "proactive": bool}`
+- `{"type": "mode", "name": "unreal"|"unity"|"code"|"default"}`
+- `{"type": "log", "level": "user"|"jarvan"|"system"|"error", "text": str, "provider"?: str}`
+
+**Conversation memory:** `Pipeline._emit_log()` her `user` ve `jarvan` logunu `conversation_memory` listesine ekler (max 20 mesaj). `LiveSession` yeniden bağlandığında bu liste system prompt'a inject edilir.
+
+**Retry mekanizması:** Live oturum çöktüğünde 5 kez yeniden bağlanmaya çalışır. 30s'den kısa çalıştıysa retry sayacı sıfırlanmaz, exponential backoff (max 8s).
+
+---
+
+### `backend/ai/live_session.py`
+
+Tüm projenin kalbi. Gemini Live WebSocket bağlantısı ve araç sistemi.
+
+**Model:** `gemini-3.1-flash-live-preview`
+
+**Config:**
 ```python
-from silero_vad import load_silero_vad
-
-# Model pool — single instance bottleneck'i önle
-VAD_MODEL_POOL_SIZE = 4  # Başlangıç için 4, production'da 16
+INPUT_SAMPLE_RATE = 16000   # Mikrofon
+OUTPUT_SAMPLE_RATE = 24000  # Hoparlör
+OUTPUT_COOLDOWN_S = 0.8     # Jarvan konuşunca eko engeli
+VOICE_NAME = "Kore"         # Türkçe ses
 ```
 
-### faster-whisper Başlatma
-```python
-from faster_whisper import WhisperModel
+**Session içindeki task'lar:**
+1. `_mic_loop()` — PyAudio'dan 32ms chunk okur, Gemini'ye gönderir. Jarvan konuşurken + 0.8s sonrasına kadar suspend (eko engeli).
+2. `_receive_loop()` — Ses, transkripsiyon ve tool_call alır. Tool gelince `_handle_tool_calls()` create_task ile spawn eder.
+3. `_stop_watcher()` — Pipeline stop flag izler.
+4. `_video_loop()` — (proaktif=True ise) 1 FPS, 720×720 JPEG, Gemini Live'a send_realtime_input(video=...).
 
-model = WhisperModel(
-    "small",          # Türkçe için small yeterli
-    device="cpu",     # GPU yoksa cpu
-    compute_type="int8"  # Hız için quantization
-)
+**Duplicate tool call koruması:**
+- `_inflight_tools: set[str]` — aynı anda iki kez çağrılamaz
+- `_tool_cooldown: dict[str, float]` — browser_task tamamlanınca 90s cooldown
+
+**System prompt yapısı (birleşik):**
+```
+modes/prompts.py → mod system prompt
++ VISION_BEHAVIOR_HINT_PROACTIVE veya VISION_BEHAVIOR_HINT_FALLBACK
++ TOOL_CONFIRMATION_HINT
++ RESEARCH_HINT
++ (varsa) conversation_memory inject
 ```
 
-### mss Ekran Yakalama
-```python
-import mss
-import mss.tools
+**Araçlar ve handler'ları:**
 
-with mss.mss() as sct:
-    screenshot = sct.grab(sct.monitors[0])
-    # Base64'e çevir → Gemini'ye gönder
+| Araç | Handler | Notlar |
+|------|---------|--------|
+| `open_app` | `asyncio.to_thread(open_app)` | app_control.py |
+| `close_app` | `asyncio.to_thread(close_app)` | taskkill / osascript |
+| `get_weather` | `asyncio.to_thread(get_weather)` | weather.py |
+| `open_url` | `asyncio.to_thread(open_url)` | webbrowser.open |
+| `search_web` | `asyncio.to_thread(hidden_search)` → `_summarize_search()` | Tavily→DDGS, Flash Lite özetleme |
+| `open_result` | `last_search_results[idx]` → `open_url` | En son search sonuçlarını açar |
+| `see_screen` | `_describe_screen()` | mss → JPEG → Gemini vision |
+| `browser_task` | `run_browser_task()` | browser_agent.py, in-flight lock |
+| `browser_start` | `asyncio.to_thread(launch_debug_browser)` | Opera GX CDP port açar |
+| `browser_takeover` | `run_takeover_task()` | CDP'den mevcut browser'a bağlan |
+| `send_mail` | `asyncio.to_thread(send_mail)` | OAuth veya compose URL |
+| `send_whatsapp` | `asyncio.to_thread(send_whatsapp)` | URL scheme + pyautogui Enter |
+
+**`_summarize_search()`:** Ham Tavily/DDGS sonucunu Flash Lite ile Türkçe 2-4 cümleye indirir. Live'a JSON/URL gitmez → 1011 WebSocket kapanma riski azalır.
+
+**`_describe_screen()`:** mss ile ekran yakalar, 720×720 thumbnail, JPEG Q75, Gemini vision ile Türkçe 2-3 cümle analiz. Model sırası: `gemini-2.5-flash` → `gemini-2.5-flash-lite` → `gemini-3.1-flash-lite-preview`.
+
+---
+
+### `backend/tools/browser_agent.py`
+
+browser-use 0.5.x tabanlı otonom tarayıcı ajanı.
+
+**Sabitler:**
+```python
+CDP_PORT = 9223           # Jarvan'ın kendi debug browser portu
+TASK_TIMEOUT_S = 480      # 8 dakika max
+MAX_STEPS = 15
 ```
 
-### Gemini Vision Çağrısı
+**Process-level task lock:**
 ```python
-import google.generativeai as genai
+_TASK_LOCK = threading.Lock()
+_TASK_RUNNING = bool
+```
+LiveSession yeniden bağlandığında `_inflight_tools` set'i sıfırlanır ama eski browser görevi hâlâ çalışıyor olabilir. Module scope lock bunu engeller — hangi LiveSession instance'ı olursa olsun aynı flag görülür.
 
-model = genai.GenerativeModel("gemini-3-flash-preview")
-response = model.generate_content([
-    transcript,      # Ses transkripsiyonu
-    screenshot_img,  # mss ile alınan ekran görüntüsü
-    system_prompt    # Jarvan'ın kişiliği ve kuralları
-])
+**LLM rotasyonu (`RotatingChatGoogle`):**
+`browser_use.llm.ChatGoogle`'dan kalıtım alır (isinstance kontrolü zorunlu). Rolling 60s RPM penceresi — `deque` tabanlı call tracking. Pool:
+```python
+MODEL_POOL = [
+    ("gemma-4-26b-a4b-it", 15),           # 1500 RPD
+    ("gemini-3.1-flash-lite-preview", 15), # 500 RPD
+]
+SAFETY_MARGIN = 1  # limitin 1 altında anahtarla
+```
+
+**`run_browser_task(task)` akışı:**
+1. Task slot kontrolü (`_try_acquire_task_slot`)
+2. `_cdp_up(9223)` → True ise CDP'ye bağlan
+3. False ise `launch_debug_browser(9223)` → Opera GX başlat
+4. Hâlâ False ise → fresh Chromium (BROWSER_PROFILE_DIR)
+5. `controller = Controller(exclude_actions=["extract_structured_data"])` — prompt yasağı yetmediği için action seviyesinde hard disable
+6. `agent.run(max_steps=15, timeout=480s)`
+7. `history.final_result()` → 600 char limit, Attachments/ kesimi
+
+**`launch_debug_browser(port)`:**
+```
+BROWSER_BINARY (Opera GX) + --remote-debugging-port={port} + --user-data-dir=BROWSER_PROFILE_DIR
+```
+- Windows: `%LOCALAPPDATA%\Programs\Opera GX\opera.exe`
+- Mac: `/Applications/Opera GX.app/Contents/MacOS/Opera`
+- Jarvan'a ait ayrı profil kullanır (BROWSER_PROFILE_DIR) — kullanıcının asıl Opera'sı açıkken SingletonLock çakışmasını önler
+- İlk açılışta kullanıcı bir kez login yapar, sonra kalıcı
+
+**`run_takeover_task(task)`:**
+Kullanıcı "devral", "kaldığım yerden devam et" dediğinde. CDP :9223'e bağlanır, kullanıcının açık tab'larından devam eder. CDP kapalıysa hata döner (auto-launch yok — takeover için kullanıcının debug modda açtığı browser şart).
+
+**`_READ_ONLY_PREFIX`** — tüm browser görevlerine eklenen güvenlik + taktik prompt:
+- `extract_structured_data` yasağı (HTML parsing timeout)
+- Uçuş: Google Flights (iç hat) / Enuygun (dış hat)
+- CAPTCHA görürse 60s bekle, human-in-the-loop
+- Sonucu ekrandan oku, done ile KISA özetle
+
+**Platform profil yolları:**
+```python
+# Jarvan'ın kendi profili (BROWSER_PROFILE_DIR):
+# Windows: %LOCALAPPDATA%\jarvan-opera-profile
+# Mac: ~/Library/Application Support/jarvan-opera-profile
+
+# Kullanıcının gerçek Opera profili (_resolve_real_opera_profile):
+# Windows: %APPDATA%\Opera Software\Opera GX Stable
+# Mac: ~/Library/Application Support/com.operasoftware.OperaGX
 ```
 
 ---
 
-## Privacy Notları
+### `backend/tools/browser.py`
 
-- Ses transkripsiyonu: **tamamen local** (faster-whisper)
-- VAD: **tamamen local** (Silero)
-- TTS: **tamamen local** (Kokoro)
-- Ekran görüntüsü: sadece Gemini çağrısı tetiklendiğinde, sadece o an alınıyor
-- Gemini API: ses transkripsiyonu + ekran görüntüsü Google sunucularına gidiyor — bu bilinçli bir trade-off
+**`open_url(url)`** — `webbrowser.open()` ile varsayılan tarayıcıda aç.
 
-Omi'den fark: Omi ne gönderdiğin belirsiz, sürekli buluta akıyor. Jarvan'da hangi verinin ne zaman nereye gittiği kod üzerinden takip edilebilir.
+**`hidden_search(query)`** — Arka planda Tavily API çağırır, fail olursa DuckDuckGo (ddgs). Tarayıcı açmaz. `live_session._summarize_search()` bunu çağırır.
 
 ---
 
-## Mod Sistemi
+### `backend/tools/mail.py`
 
-Jarvan "her şeyi yapan asistan" değil — hangi uygulama ön planda olduğuna göre moda giren bir sistem. Tek Gemini çağrısı gidiyor ama system prompt değişiyor.
+**`send_mail(to, subject, body, auto_send)`**
+
+`to` → `contacts.resolve_email()` → email adresi (rehberde isim varsa çevirir)
+
+- `auto_send=True`: Gmail API (OAuth) → direkt gönderir. `credentials.json` ve `token.json` gerekli.
+- `auto_send=False`: `https://mail.google.com/mail/?view=cm&...` compose URL aç.
+
+OAuth flow: `token.json` yoksa veya süresi dolmuşsa `InstalledAppFlow` → localhost'ta browser açar.
+
+---
+
+### `backend/tools/whatsapp.py`
+
+**`send_whatsapp(message, phone=None)`**
+
+`phone` → `contacts.resolve_phone()` → numara (rehberde isim varsa çevirir)
+
+Akış:
+1. `whatsapp://send?phone={num}&text={msg}` URL'sini `webbrowser.open()` ile aç
+2. WhatsApp başlamasını bekle (5s eğer çalışmıyorsa, 3s çalışıyorsa)
+3. Enter bas: Mac=osascript keystroke, Windows=pygetwindow+pyautogui
+
+---
+
+### `backend/tools/app_control.py`
+
+`APP_ALIASES` dict'i: uygulama adı → `{win: exe, mac: app_name}`.
+
+- `open_app`: Windows → `cmd /c start "exe"`, Mac → `open -a "App"`
+- `close_app`: Windows → `taskkill /IM exe /F`, Mac → osascript quit → pkill fallback
+
+---
+
+### `backend/tools/weather.py`
+
+`requests` ile `wttr.in/?format=j1` JSON API çağırır. Şehir adını alır, anlık + yarınki hava döner.
+
+---
+
+### `backend/modes/`
+
+**`detector.py`:** `pygetwindow.getActiveWindow()` → pencere başlığı → `WINDOW_MODE_MAP` eşleşmesi.
 
 ```python
-active_window = get_active_window()
-
-if "Unreal" in active_window:
-    mode = "developer_unreal"
-    system_prompt = UNREAL_PROMPT      # Blueprint, C++, UE5 ağırlıklı
-elif "Unity" in active_window:
-    mode = "developer_unity"
-    system_prompt = UNITY_PROMPT       # C#, Unity API, game feel
-elif "Code" in active_window or "Cursor" in active_window:
-    mode = "developer_code"
-    system_prompt = CODE_PROMPT        # Genel yazılım, debug
-elif is_short_question(transcript):
-    mode = "assistant"
-    system_prompt = ASSISTANT_PROMPT   # Kısa, hızlı yanıt
-else:
-    mode = "default"
-    system_prompt = DEFAULT_PROMPT     # Dengeli genel asistan
+WINDOW_MODE_MAP = [
+    (["Unreal", "UE5", "UE4"], "unreal", UNREAL_PROMPT),
+    (["Unity"], "unity", UNITY_PROMPT),
+    (["Visual Studio Code", "Code", "Cursor", "PyCharm", "Rider", "CLion"], "code", CODE_PROMPT),
+]
+# Eşleşme yoksa → "default", DEFAULT_PROMPT
 ```
 
-Her mod ayrı bir system prompt dosyası. Dev modları teknik bilgi ağır, assistant modu hafif ve hızlı. Token israfı yok, odak kaybolmuyor.
+**`prompts.py`:** Her mod için ayrı system prompt. Tümü Türkçe, samimi ton. Sesli asistan kuralları (max 2-3 cümle, markdown yok, liste yok) sadece DEFAULT_PROMPT'ta; diğer modlarda daha teknik.
 
 ---
 
-## Gemini Live API — Video Akışı
+### `backend/audio/vad_gate.py` (legacy)
 
-Bazı sorunlar screenshot ile çözülemiyor. Karakterin koşma animasyonu bozuk — sadece koşarken oluyor, tek frame'de göremezsin. O anı göstermek için gerçek zamanlı video lazım.
+Silero VAD tabanlı state machine. Live mod kullanılmıyorsa devreye girer.
 
-**Gemini Live API** tam bu iş için:
-- Ses + video akışını aynı anda gerçek zamanlı işliyor
-- Düşük gecikmeyle yanıt veriyor
-- `gemini-3.1-flash-live-preview` — Mart 2026 itibarıyla free tier'da ücretsiz
-- WebSocket tabanlı, sürekli stream
-
-Senaryo:
 ```
-"Koşma animasyonu bozuk, şu an görüyor musun?"
-    ↓
-Gemini Live ekranı gerçek zamanlı izliyor
-    ↓
-Animasyon bozulduğu anda tam o frame'i görüyor
-    ↓
-"Root motion kapalı, şu kemik rotasyonu yanlış görünüyor..."
+State: SILENCE → SPEECH → HANGOVER → (4s sonra) SILENCE + FINALIZE
 ```
 
-v0.1'deki screenshot sistemiyle başlanıyor, v0.2'de Gemini Live'a geçiliyor. Mimari değişiklik büyük — WebSocket stream, farklı VAD yaklaşımı, yeni ses pipeline — o yüzden ayrı bir sprint.
+Parametreler (Omi'den alındı):
+```python
+VAD_GATE_SPEECH_THRESHOLD    = 0.65
+VAD_GATE_HANGOVER_MS         = 4000  # 4s bekle, cümle ortasında kesme
+VAD_GATE_FINALIZE_SILENCE_MS = 300
+```
+
+---
+
+### `backend/audio/transcriber.py` (legacy)
+
+```python
+WhisperModel("small", device="cpu", compute_type="int8")
+# language="tr", beam_size=5, vad_filter=False (VAD bizde)
+```
+
+---
+
+### `backend/screen/capture.py`
+
+`mss` ile ekran yakalar. `SCREEN_MONITOR_INDEX=2` (config.py) → ikinci monitör. PIL Image veya base64 JPEG döner.
+
+---
+
+### `backend/tts/speaker.py` (legacy)
+
+`edge-tts tr-TR-EmelNeural` + `pygame` ile ses çalar. Sadece VAD modu için; Live modda Gemini'nin kendi native audio'su kullanılıyor.
+
+---
+
+### `backend/config.py`
+
+```python
+GEMINI_API_KEY     # .env'den
+TAVILY_API_KEY     # .env'den, search_web için
+MY_WHATSAPP        # .env'den, kullanıcının kendi numarası
+SCREEN_MONITOR_INDEX = 2   # İkinci monitör
+```
+
+---
+
+### Frontend (Electron + React + Vite)
+
+**Stack:** Electron 33, React 18, TypeScript, Tailwind CSS, Framer Motion, Lucide
+
+**Başlatma:**
+```
+npm run dev → Vite build → Electron main → backend spawn (python main.py) → WebSocket /ws bağlantısı
+```
+
+**UI:**
+- Ses aç/kapat (start/stop pipeline)
+- Live mod toggle (Gemini Live ↔ VAD)
+- Proaktif mod toggle (1 FPS video stream)
+- Aktif mod göstergesi (Unreal / Unity / Code / Default)
+- Log ekranı (user / jarvan / system / error)
+
+---
+
+## Kurulum
+
+### .env (backend/.env)
+```
+GEMINI_API_KEY=...
+TAVILY_API_KEY=...       # opsiyonel, DDGS fallback var
+MY_WHATSAPP=905XXXXXXXXX # ülke koduyla, + olmadan
+```
+
+### Gmail OAuth
+```
+backend/credentials.json → Google Cloud Console'dan indir
+İlk çalıştırmada browser açılır → giriş yap → token.json oluşur
+```
+
+### Python
+```bash
+cd backend
+python -m venv .venv
+.venv\Scripts\activate   # Windows
+pip install -r requirements.txt
+python main.py           # Direkt test
+```
+
+### Frontend
+```bash
+cd frontend
+npm install
+npm run dev              # Electron + Vite dev mode
+```
+
+---
+
+## Browser Agent Debug
+
+Windows'ta browser agent sorun çıkardığında:
+
+```powershell
+cd C:\...\JARVAN\backend
+.venv\Scripts\python.exe -c "
+from tools.browser_agent import _cdp_up, launch_debug_browser, BROWSER_BINARY, BROWSER_PROFILE_DIR, CDP_PORT
+print('binary:', BROWSER_BINARY)
+print('profile_dir:', BROWSER_PROFILE_DIR)
+print('cdp_up_before:', _cdp_up(CDP_PORT))
+print('launch_result:', launch_debug_browser())
+print('cdp_up_after:', _cdp_up(CDP_PORT))
+"
+```
+
+**Beklenen:** `binary` Opera GX path döner, `launch_result` ok=True, `cdp_up_after` True.
+
+**Sıkça çıkan sorunlar:**
+- `binary: None` → Opera GX kurulu değil ya da PATH farklı
+- `cdp_up_after: False` → Opera GX başka bir pencerede açık ve BROWSER_PROFILE_DIR'ı kilitlemiş; Opera'yı kapat, tekrar dene
+- `SingletonLock` → `_cleanup_singleton_locks()` BROWSER_PROFILE_DIR'daki lock dosyalarını siler
+
+---
+
+## Bilinen Kararlar / Trade-off'lar
+
+| Karar | Sebep |
+|-------|-------|
+| Live native audio (Gemini) → VAD/Whisper/TTS yok | Gecikme ~200ms, VRAM harcamıyor, Türkçe kalitesi iyi |
+| browser-use 0.5.x + RotatingChatGoogle kalıtımı | isinstance kontrolü nedeniyle ChatGoogle'dan kalıtım şart |
+| `extract_structured_data` action seviyesinde disable | Prompt yasağı yetersiz, 80-130s timeout Live session'ı donduruyor |
+| `keep_alive=False` (BrowserProfile) | True ise `session.stop()` hang ediyor, tool response gitmiyor |
+| Jarvan'a ayrı Opera profili (BROWSER_PROFILE_DIR) | Kullanıcının asıl Opera'sı açıkken SingletonLock çakışmasını önler |
+| CDP port 9223 (9222 değil) | 9222 kullanıcının kendi debug browser'ında olabilir |
+| Tavily → DDGS fallback | Tavily 1000 istek/ay, DDGS sınırsız ama daha yavaş |
+| Conversation memory = 20 mesaj system prompt inject | Live WebSocket kopunca bağlam kaybolur; inject ile süreklilik |
+| search_web sonucu Flash Lite ile özetlenir | Ham JSON/URL Live'a giderse 1011 kapanma riski artar |
+| Tool response'ta `_instruction` yok | Meta-field modeli konfüze edip halüsinasyona sebep oluyordu |
+| Keepalive (boş text frame) kaldırıldı | turn_complete=False frame'leri tool sonrası halüsinasyona yol açıyordu |
 
 ---
 
 ## Yol Haritası
 
-### v0.1 — MVP (Screenshot tabanlı)
-- [x] Silero VAD entegrasyonu (Omi parametreleriyle)
-- [x] faster-whisper transkripsiyon
-- [x] Basit intent filter (regex tabanlı, `backend/ai/router.py`)
-- [x] mss ekran görüntüsü + Gemini 3 Flash
-- [x] Local LLM (Qwen3-VL:8b, Ollama) + 3-tier router (cloud/local-vision/local-text)
-- [ ] Mod sistemi (active window tespiti + dynamic system prompt)
-- [x] ~~Kokoro TTS~~ → Edge TTS (`tr-TR-EmelNeural`)
-- [ ] Minimal Electron UI (açık/kapalı toggle, aktif mod göstergesi, log)
+### v0.1 ✅ — VAD MVP
+Silero VAD + Whisper + Gemini Flash + Edge TTS + mss ekran
 
-### v0.2 — Gemini Live (Video & Hybrid Stream)
-- [x] Gemini Live API entegrasyonu (`gemini-3.1-flash-live-preview`)
-- [x] Ses + Ekran video stream — (1 FPS WebSocket Sürekli Yayın Mimarisi)
-- [x] Proaktif mod kapalıyken 2.5 Flash Native (Audio) ile ucuz limitli kullanım sağlanması
-- [x] VAD olmadan direkt Live Session mikrofon stream yapısı kurulması
-- [x] Kullanıcı UI entegrasyonu (Mod göstergeleri, Proaktif Toggle, Log ekranı)
-- [x] Proaktif mod (Video yayını) anında aç/kapa yapıldığında sistemin kendini adapte etmesi
+### v0.2 ✅ — Gemini Live
+Native audio dialog, 1 FPS video stream, proaktif mod, Live session
 
-### v0.3 — Context & Hafıza (Kişiselleştirme)
-- [x] Kullanıcı bağlamı hafızası (Sürekli Hafıza - `main.py` içerisinden son 20 mesajın enjektesi)
-- [x] Modlar arası (Live/Proaktif) geçişte kopan bağlantılarda anlık durum kurtarması
-- [ ] Ayarlar ekranı (VAD threshold, dil, ses tipi değiştirme arayüzü)
-- [ ] Production build (PyInstaller + electron-builder)
+### v0.3 ✅ — Context & Araçlar
+Conversation memory, browser agent, Gmail, WhatsApp, web arama, hava durumu, mod sistemi
 
-### v0.4 — Computer Use (PC Kontrolü)
+### v0.4 — Computer Use
+- `pyautogui` görev executor (mouse/keyboard)
+- Tüm aksiyonlarda sesli onay mekanizması ("X'i yapacağım, onaylıyor musun?")
+- Sandbox modu (tehlikeli görevleri simüle et)
 
-Jarvan'ın "benim yerime iş yap" modu. "Git şu siteye gir", "mail at", "şu dosyayı taşı" gibi görevleri sesle veriyor, Jarvan execute ediyor.
+### v0.5 — Ultra-Low Latency Agentic
+- Gemini function calling ile metin yerine JSON tool response
+- Gemini Live native audio'yu fully exploit et (300ms R-T-T hedefi)
+- User context state JSON olarak system prompt'a
 
-**Araç stack'i:**
-
-| Görev türü | Araç | Neden |
-|-----------|------|-------|
-| Tarayıcı görevleri (mail, form, web) | `browser-use` | 55k star, Playwright + LLM, Gemini destekli, aktif |
-| Sistem görevleri (dosya, uygulama, mouse) | `pyautogui` | Pure Python, cross-platform, sıfır bağımlılık |
-
-**Akış:**
-
-```python
-task = "Gmail'i aç ve şu kişiye mail at"
-
-# Görev türünü belirle
-if is_browser_task(task):
-    browser_use_agent.run(task)   # Playwright ile tarayıcı kontrolü
-elif is_system_task(task):
-    pyautogui_agent.run(task)     # Mouse/keyboard kontrolü
-```
-
-**Onay mekanizması — zorunlu:**
-
-Jarvan hiçbir zaman onaysız execute etmiyor. Her görev öncesi sesli özet:
-
-```
-"Gmail'i açacağım, burak@gmail.com adresine 
-'Toplantı yarın saat 3' yazacağım ve göndereceğim.
-Onaylıyor musun?"
-    ↓
-Sen "evet" diyorsun
-    ↓
-Execute
-```
-
-Bu hem güvenlik hem Jarvan'ın "kontrollü, güvenilir" felsefesiyle uyuşuyor. OpenClaw gibi arka planda özerk çalışan bir sistem değil — her kritik adımda sen onaylıyorsun.
-
-**Neden OpenClaw değil:**
-OpenClaw messaging platform üzerinden çalışıyor, ne gönderdiği belirsiz, özerk davranış riskleri var (kullanıcıların mail inboxlarını silmiş, izinsiz profil oluşturmuş vakaları belgelenmiş). Jarvan'da görev pipeline'ı şeffaf ve onay gerektiriyor.
-
-- [ ] `browser-use` entegrasyonu (Gemini destekli Playwright agent)
-- [ ] `pyautogui` görev executor
-- [ ] Onay mekanizması (sesli özet → kullanıcı onayı → execute)
-- [ ] Görev türü sınıflandırıcı (browser task mı, system task mı?)
-- [ ] Hata yönetimi (yanlış tıklama, sayfa yüklenmedi, popup çıktı)
-- [ ] Sandbox modu (tehlikeli görevleri önce simüle et)
-
-### v0.5 — Agentic Operations & Ultra-Low Latency Pipeline (Jarvis Paradigm)
-
-Bu fazın temel amacı; sistemin pasif bir "soru-cevap" asistanından çıkıp, **işletim sistemi seviyesinde otonom** (agentic) işlemleri **300ms** barajının altında tepki (R-T-T) vererek yürütebilmesidir. Başka bir AI ajanı projeyi devraldığında uygulanması gereken mimari prensipler şunlardır:
-
-**1. Architectural Shift: Function Calling (Tool Use)**
-- Gemini / Claude modellerinin `tools` veya `function_declarations` API'leri entegre edilecek.
-- Model, kullanıcı komutunu ("CS:GO aç") anladığında önce metin üretmeyecek; doğrudan `{"name": "execute_program", "args": {"target": "csgo.exe"}}` JSON'ı dönecek.
-- `main.py` üzerindeki event loop, bu JSON'u parse edip `pyautogui` veya `subprocess` ile paralel thread'de çalıştıracak.
-
-**2. Ultra-Low Latency & Native Speech (Gemini Live Advantage)**
-- Ağır lokal TTS modelleri (Chatterbox vb.) VRAM dar boğazına sebep olacağından kullanılmayacaktır. 
-- Hedef: Halihazırda var olan `Gemini 3.1 Flash Live` modelinin doğal, stream'li "Native Audio Dialog" sistemi sonuna kadar sömürülecektir. Google'ın kendi sunucularından gelen 200-300ms gecikmeli ses sentezi, sistemi sıfır VRAM harcayarak akıcı tutar.
-
-**3. Contextual Persona & Memory State**
-- Sistem, kullanıcının envanterini bilecek (Oynanan oyunlar, kurulu dizinler, favori yayın sahneleri). Bu statik context, system prompt içerisine JSON state olarak yerleştirilecek.
-- Örn: `{"user_context": {"favorite_game": "CS:GO", "obs_scene": "Gameplay"}}`
-
-### v0.6 — The Ultimate Agentic Vision (Gece Fikirleri & İleri Otonomi)
-
-Projeyi sadece talep üzerine yanıt veren bir robottan, inisiyatif alabilen "Demir Adam Jarvis" (Junior Developer + Remote Agent) seviyesine taşıyacak uzun vaadeli hedefler şunlardır:
-
-**1. "Context Aware" (Oto-Pilot) İnisiyatif Mekanizması**
-- Asistan, OS process listesini veya ekranı düzenli okuyarak durum değişikliklerini fark eder. 
-- *Senaryo:* Sistem Unreal Engine 5 açıldığını detect eder. Jarvan, sen hiçbir şey demeden: *"Günaydın Burak. Hata aldığımız C++ Inventory sınıfına geri döndüğünü görüyorum. Dökümanları yandayayım mı?"* şeklinde inisiyatifli iletişimi başlatır.
-
-**2. Shadow Coder (Görünmez İzleyici / Rewind Asistanı)**
-- Arka planda 1/30 FPS gibi çok yavaş bir oranla veya VSCode log hook'ları ile geçmişi (Visual/Textual Memory) ön bellekte tutar.
-- *Senaryo:* Hata yaptığında "10 dk önce neyi bozdum?" dersin. Jarvan yakın ekran datasını tarayıp *"Saat 14:15'te pointer'ı null bırakıp kayıta geçtin"* diyerek Rewind (Geri Sarma) yeteneği sergiler.
-
-**3. Otonom "Sandbox" Hata Çözücü (Junior Çırak)**
-- Derleme patladığında (Error 500 / Build Fail), Jarvan ana dosyalara müdahale etmeden önce geçici bir `Sandbox` klasörü yaratır. Kodu kendi CLI'ında defalarca dener, bozar ve dependency ekler. 
-- Build başarılı (Exit Code 0) verdiğinde sana *"Eksik kütüphaneleri hallettim, düzeltme hazır"* diyerek sonucu sunar.
-
-**4. Unreal Engine 5 "Otonom Editor" Kancası (The Holy Grail)**
-- UE5'in `Python Editor Scripting Plugin` mimarisi veya "Blueprint Node Text Copy-Paste" hack'i kullanılacaktır.
-- *Senaryo:* Jarvan Blueprint spagettisini analiz edip C++ `UCLASS/UFUNCTION` mimarisine dönüştürür. UE5 terminalinden veya Pano (Clipboard) emülasyonu ile düğümleri arayüze otomatik çizer.
-
-**5. Telegram Remote "Execute" Tünelleri**
-- `python-telegram-bot` kullanılarak dışarıdan sesli/yazılı talimat alıp PC'yi uyandıran (Wake-on-LAN) veya görev başlatan bir köprü tetikleyicisi. Jarvan işlemleri halledip "Ses Kaydı" (Voice Note) olarak Telegramdan rapor döner.
-
-**6. Hard-Coded Guardrails (Güvenlik Kalkanı)**
-- LLM'in halüsinasyon görüp sistemi silmesi gibi risklere karşı Python seviyesinde Regex ve System Path black-list duvarı (`safe_commands.py`)
-- *Kural:* Silme veya Kritik dosya yazma (Destructive Actions) içeren HER tetiklemede sistem `Human-in-the-loop` (İnsan Onayı İsteme) durumuna geçer ("Devam edeyim mi patron?").
-
-**7. Machine Learning & Vectorized Behavioral Persona**
-- Sadece Prompt tabanlı kişilik değil, **RAG (Retrieval-Augmented Generation)** kullanılarak gerçek bir Makine Öğrenmesi (Behavioral Pattern Analysis) süreci işletilecektir.
-- *Mimari:* Kullanıcının her etkileşimi, kod düzeltiş şekli veya gün içindeki tercihleri, açık kaynak bir "Embedding" modeli ile matematiksel vektörlere çevrilip lokal bir `ChromaDB` (Vektör Veritabanı) içerisine yazılır.
-- *Oto-Kişiselleştirme:* Asistan, "Senin Blueprint yazma stilini sevmediğini biliyorum, bu yüzden C++ ile yanıt hazırladım" gibi doğrudan M.L. hafızasından gelen saptamalar yapar. Aynı zamanda kullanıcı alışkanlıklarına göre Anomaly Detection (Örn: "Çok hızlı ve hatalı klavye kullanıyorsun, yoruldun mu?") yürütebilir.
+### v0.6 — Tam Otonomi
+- Proaktif inisiyatif (UE5 açıldığını detect edince kendisi konuşsun)
+- Shadow Coder (ekran geçmişi, rewind asistanı)
+- RAG + ChromaDB (kullanıcı davranış vektörleri)
+- Telegram remote execute tüneli
 
 ---
 
 ## Geliştirici
 
-**Burak Emre Erdemci**
+**Burak Emre Erdemci**  
 [burakerdemci.com](https://burakerdemci.com) · [github.com/BurakErdemci](https://github.com/BurakErdemci)
-
----
-
-*"Bunu ben kullanabilirim" hissiyle başladı.*
