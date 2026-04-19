@@ -56,6 +56,14 @@ class Pipeline:
     def start(self):
         if self.running:
             return
+            
+        # Vosk Model Check
+        model_p = os.path.join(os.path.dirname(__file__), "models", "vosk-tr")
+        if not os.path.exists(model_p):
+            self.emit("log", level="error", text="⚠️ Vosk modeli (vosk-tr) bulunamadı! Yerel uyandırma 'Uyan Jarvan' çalışmayabilir.")
+        else:
+            self.emit("log", level="system", text="✅ Wake Word (Yerel Dinleme) sistemi hazır.")
+
         self.stop_flag.clear()
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
@@ -293,17 +301,17 @@ async def health():
 
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
-    await manager.connect(ws)
-    await ws.send_json({
-        "type": "status",
-        "running": pipeline.running,
-        "live": pipeline.live_enabled,
-        "proactive": pipeline.proactive_enabled,
-    })
-    mode_name, _ = get_active_mode()
-    await ws.send_json({"type": "mode", "name": mode_name})
-
     try:
+        await manager.connect(ws)
+        await ws.send_json({
+            "type": "status",
+            "running": pipeline.running,
+            "live": pipeline.live_enabled,
+            "proactive": pipeline.proactive_enabled,
+        })
+        mode_name, _ = get_active_mode()
+        await ws.send_json({"type": "mode", "name": mode_name})
+
         while True:
             msg = await ws.receive_json()
             t = msg.get("type")
@@ -318,6 +326,8 @@ async def ws_endpoint(ws: WebSocket):
             else:
                 await ws.send_json({"type": "log", "level": "error", "text": f"Bilinmeyen komut: {t}"})
     except WebSocketDisconnect:
+        pass
+    finally:
         manager.disconnect(ws)
 
 

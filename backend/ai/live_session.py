@@ -19,8 +19,12 @@ from tools.app_control import open_app, close_app
 from tools.whatsapp import send_whatsapp
 from tools.browser_agent import run_browser_task, run_takeover_task, launch_debug_browser
 from tools.browser import open_url, search_web, hidden_search
+from tools.calculator import run_calculator_task
+from tools.computer_use import run_computer_task
 from tools.mail import send_mail
+from tools.spotify import play_spotify_track
 from tools.weather import get_weather
+from ai.wake_word import WakeWordEngine
 
 FUNCTION_DECLARATIONS = [
     {
@@ -217,6 +221,72 @@ FUNCTION_DECLARATIONS = [
             "required": ["message"],
         },
     },
+    {
+        "name": "calculator_compute",
+        "description": (
+            "Hesap makinesini deterministic olarak açar ve basit bir işlemi yapar. "
+            "Örnek: 'hesap makinesinde 7+7 yap', 'calculator ile 145*32 hesapla'. "
+            "Mümkün olduğunda bunu `computer_use` yerine tercih et."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "task": {
+                    "type": "string",
+                    "description": "Yapılacak işlem cümlesi veya ifade (örn: '7+7', 'hesap makinesinde 12/3 yap')",
+                },
+            },
+            "required": ["task"],
+        },
+    },
+    {
+        "name": "spotify_play",
+        "description": (
+            "Spotify'da şarkı aratıp çalmayı deterministic olarak dener. "
+            "Örnek: 'Spotify'da Tarkan Kuzu Kuzu çal'. "
+            "Mümkün olduğunda bunu `computer_use` yerine tercih et."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "track": {
+                    "type": "string",
+                    "description": "Çalınacak şarkı veya arama sorgusu",
+                },
+                "artist": {
+                    "type": "string",
+                    "description": "Opsiyonel sanatçı adı",
+                },
+            },
+            "required": ["track"],
+        },
+    },
+    {
+        "name": "computer_use",
+        "description": (
+            "Bilgisayarı otonom kontrol eder — ekranı görür, mouse/keyboard ile herhangi bir uygulamada "
+            "işlem yapar (Spotify'da şarkı aç, Finder'da dosya bul, ayarları değiştir, VS Code'da dosya aç, "
+            "Discord'da mesaj yaz, masaüstü uygulama kontrol et vb.). "
+            "30-120sn sürer. Çağırmadan önce 'tamam hallettim, bilgisayarda yapıyorum' de ve SUS. "
+            "Tarayıcıda otonom araştırma için `browser_task` DAHA HIZLI — onu tercih et. "
+            "`computer_use` SADECE tarayıcı dışı uygulamalar veya browser_task'ın yetmediği durumlar için."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "task": {
+                    "type": "string",
+                    "description": "Bilgisayarda yapılacak görev, Türkçe doğal dille (örn: 'Spotify'da Tarkan Kuzu Kuzu çal', 'Hesap makinesinde 145*32 hesapla')",
+                },
+            },
+            "required": ["task"],
+        },
+    },
+    {
+        "name": "sleep_mode",
+        "description": "Jarvan'ı uyku moduna alır. Kullanıcı 'uyu', 'kendini kapat', 'dinlenmeye geç' dediğinde bu aracı çağır. Oturum kapanmaz ama Jarvan sadece 'Uyan Jarvan' dendiğinde tekrar cevap verir.",
+        "parameters": {"type": "object", "properties": {}},
+    },
 ]
 
 TOOL_IMPL = {
@@ -293,6 +363,16 @@ VISION_BEHAVIOR_HINT_PROACTIVE = (
     "Eğer kullanıcı 'şu animasyon bozuk mu?' veya 'ekranımda ne görüyorsun' gibi bir şey sorarsa, hemen o saniye ne görüyorsan söyle. Ekstra bir bekleme veya fotoğraf çekme kuralı yok, doğrudan gördüğünden bahset."
 )
 
+COMPUTER_USE_HINT = (
+    "\n\n[COMPUTER USE KURALLARI]\n"
+    "- `computer_use`: Bilgisayarda herhangi bir uygulamayı otonom kontrol eder (ekranı görür, mouse/keyboard kullanır). "
+    "Spotify, Discord, Finder, VS Code, sistem ayarları, masaüstü uygulamalar — HER ŞEY. "
+    "30-120sn sürer. Çağırmadan önce 'tamam hallettim, bilgisayarda yapıyorum' de ve SUS.\n"
+    "- Tarayıcı araştırması için `browser_task` DAHA HIZLI — tarayıcıda onu kullan.\n"
+    "- Sonuç geldikten sonra result'u sesli özetle, kelimesi kelimesine.\n"
+    "- Riskli istekler (dosya silme, format, kritik ayar) → ÖNCE ONAY AL."
+)
+
 
 class LiveSession:
     def __init__(
@@ -315,6 +395,15 @@ class LiveSession:
         self.last_search_results: list[dict] = search_cache if search_cache is not None else []
         self._inflight_tools: set[str] = set()  # duplicate tool call koruması
         self._tool_cooldown: dict[str, float] = {}  # son tamamlanma zamanı
+        self.is_asleep = True  # 7/24 dinleme modu için uyku durumu (Default Uyku)
+        
+        # Wake Word Motoru (Yerel)
+        try:
+            self.ww_engine = WakeWordEngine("models/vosk-tr", sample_rate=INPUT_SAMPLE_RATE)
+        except Exception as e:
+            self.on_log("error", f"WakeWord motoru başlatılamadı: {e}", None)
+            self.ww_engine = None
+
         self.client = genai.Client(
             api_key=GEMINI_API_KEY,
             http_options={"api_version": "v1beta"},
@@ -324,9 +413,14 @@ class LiveSession:
         active_model = MODEL_FLASH_LIVE
         system_instruction = (
             self.system_prompt
+            + "\n\n[UYKU MODU KURALLARI]\n"
+            "Sen 7/24 uyanık kalabilen bir asistansın. Kullanıcı 'uyu', 'kendini kapat', 'hoşçakal', 'dinlenmeye geç' gibi veda cümleleri kurarsa "
+            "mutlaka `sleep_mode()` aracını çağır. Uyumadan önce kullanıcıya nazikçe veda et (Örn: 'Tamamdır Burak, ben buralardayım, uyanmamı istersen seslenmen yeterli.'). "
+            "Uyku modundayken sesin Gemini'ye gitmeyecek, sadece yerel olarak 'Uyan Jarvan' demeni bekleyeceğim."
             + (VISION_BEHAVIOR_HINT_PROACTIVE if self.send_video else VISION_BEHAVIOR_HINT_FALLBACK)
             + TOOL_CONFIRMATION_HINT
             + RESEARCH_HINT
+            + COMPUTER_USE_HINT
         )
         
         if self.conversation_memory:
@@ -358,6 +452,8 @@ class LiveSession:
         try:
             async with self.client.aio.live.connect(model=active_model, config=config) as session:
                 self.on_log("system", f"Live bağlandı ({active_model}) — ses: {VOICE_NAME}.", None)
+                if self.is_asleep:
+                    self.on_log("system", "Jarvan uyku modunda (Pusu). 'Uyan Jarvan' diyerek uyandırabilirsin.", None)
 
                 tasks = [
                     asyncio.create_task(self._mic_loop(session)),
@@ -395,8 +491,26 @@ class LiveSession:
         try:
             while not self.should_stop():
                 data = await asyncio.to_thread(stream.read, INPUT_CHUNK, False)
+                
+                # --- Wake Word / Sleep Logic ---
+                if self.is_asleep:
+                    if self.ww_engine:
+                        result = self.ww_engine.process_data(data)
+                        if result and "uyan" in result:
+                            self.on_log("system", "Wake Word yakalandı: UYAN!", None)
+                            self.is_asleep = False
+                            # Gemini'ye uyandığını ve selam vermesi gerektiğini söyle
+                            try:
+                                await session.send_realtime_input(
+                                    text="Kullanıcı seni 'Uyan Jarvan' diyerek uyandırdı. Ona sıcak ve enerjik bir karşılama yap."
+                                )
+                            except Exception as e:
+                                self.on_log("error", f"Selam tetikleme hatası (devam ediliyor): {e}", None)
+                    continue # Uyku modundayken sesi buluta gönderme
+                
                 if self.is_speaking or (time.monotonic() - self.last_output_time < OUTPUT_COOLDOWN_S):
                     continue
+                
                 await session.send_realtime_input(
                     audio=types.Blob(data=data, mime_type=f"audio/pcm;rate={INPUT_SAMPLE_RATE}")
                 )
@@ -581,6 +695,63 @@ class LiveSession:
                     self._inflight_tools.discard("browser_takeover")
                     result = {"ok": False, "error": str(e)}
                 self.on_log("system", f"[tool sonuç] {result}", None)
+            elif name == "computer_use":
+                task = args.get("task", "")
+                if "computer_use" in self._inflight_tools:
+                    result = {"ok": False, "error": "Computer use görevi zaten çalışıyor, lütfen bekle."}
+                    self.on_log("system", "[tool] computer_use zaten in-flight, atlandı", None)
+                    responses.append(types.FunctionResponse(id=fc.id, name=name, response=result))
+                    continue
+                now = time.monotonic()
+                cooldown_until = self._tool_cooldown.get("computer_use", 0)
+                if now < cooldown_until:
+                    result = {"ok": False, "error": "Az önce aynı görev tamamlandı, sonucu sesli özetle."}
+                    self.on_log("system", f"[tool] computer_use cooldown ({cooldown_until - now:.0f}s kaldı), atlandı", None)
+                    responses.append(types.FunctionResponse(id=fc.id, name=name, response=result))
+                    continue
+                self._inflight_tools.add("computer_use")
+                self.on_log("system", f"[tool] computer_use({task[:80]}...)", None)
+                try:
+                    raw = await asyncio.wait_for(run_computer_task(task), timeout=300)
+                    self._inflight_tools.discard("computer_use")
+                    self._tool_cooldown["computer_use"] = time.monotonic() + 60
+                    if raw and raw.get("ok"):
+                        result = {"ok": True, "result": str(raw.get("result", ""))}
+                    else:
+                        err_msg = raw.get("error", "görev başarısız") if raw else "Boş yanıt"
+                        result = {"ok": False, "error": str(err_msg)}
+                except asyncio.TimeoutError:
+                    self._inflight_tools.discard("computer_use")
+                    result = {"ok": False, "error": "Computer use 5 dakikada bitmedi, zaman aşımı."}
+                except Exception as e:
+                    self._inflight_tools.discard("computer_use")
+                    result = {"ok": False, "error": str(e)}
+                self.on_log("system", f"[tool sonuç] {result}", None)
+            elif name == "calculator_compute":
+                task = args.get("task", "")
+                self.on_log("system", f"[tool] calculator_compute({task[:80]}...)", None)
+                try:
+                    raw = await run_calculator_task(task)
+                    if raw.get("ok"):
+                        result = {"ok": True, "result": f"Calculator'da {raw.get('expression')} işlendi, sonuç: {raw.get('result')}"}
+                    else:
+                        result = {"ok": False, "error": raw.get("error", "hesap makinesi görevi başarısız")}
+                except Exception as e:
+                    result = {"ok": False, "error": str(e)}
+                self.on_log("system", f"[tool sonuç] {result}", None)
+            elif name == "spotify_play":
+                track = args.get("track", "")
+                artist = args.get("artist")
+                self.on_log("system", f"[tool] spotify_play(track={track!r}, artist={artist!r})", None)
+                try:
+                    raw = await play_spotify_track(track, artist)
+                    if raw.get("ok"):
+                        result = {"ok": True, "result": raw.get("result", "")}
+                    else:
+                        result = {"ok": False, "error": raw.get("error", "spotify görevi başarısız")}
+                except Exception as e:
+                    result = {"ok": False, "error": str(e)}
+                self.on_log("system", f"[tool sonuç] {result}", None)
             elif name == "see_screen":
                 self.on_log("system", "[tool] see_screen()", None)
                 try:
@@ -592,6 +763,11 @@ class LiveSession:
                 except Exception as e:
                     result = {"ok": False, "error": str(e)}
                 self.on_log("system", f"[tool sonuç] {result}", None)
+            elif name == "sleep_mode":
+                self.on_log("system", "[tool] sleep_mode()", None)
+                self.is_asleep = True
+                result = {"ok": True, "message": "Jarvan uyku moduna geçti. Sadece 'Uyan Jarvan' ile uyanacak."}
+                self.on_log("system", "[Jarvan Uyuyor...]", None)
             elif name == "open_result":
                 self.on_log("system", f"[tool] open_result({args})", None)
                 try:

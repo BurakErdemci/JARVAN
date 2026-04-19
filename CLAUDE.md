@@ -12,7 +12,7 @@ Mac'te de çalışıyor (geliştirme ortamı), asıl hedef platform Windows.
 ### Tamamlanan (Production)
 
 - ✅ **Gemini Live native audio** — `gemini-3.1-flash-live-preview` ile gerçek zamanlı ses dialog
-- ✅ **Tool sistemi** (12 araç): app aç/kapat, hava durumu, web arama, URL aç, Gmail, WhatsApp, ekran görme, browser ajan
+- ✅ **Tool sistemi** (13 araç): app aç/kapat, hava durumu, web arama, URL aç, Gmail, WhatsApp, ekran görme, browser ajan, computer use
 - ✅ **Proaktif mod** — `send_video=True` ile 1 FPS ekran stream, Gemini Live ekranı sürekli izliyor
 - ✅ **Conversation memory** — Session resetlendiğinde son 20 mesaj system prompt'a inject ediliyor
 - ✅ **Mod sistemi** — Aktif pencereye göre system prompt değişiyor (Unreal / Unity / Code / Default)
@@ -23,6 +23,7 @@ Mac'te de çalışıyor (geliştirme ortamı), asıl hedef platform Windows.
 - ✅ **Electron UI** — Ses aç/kapat, live mod, proaktif mod toggle, mod göstergesi, log ekranı
 - ✅ **VAD pipeline** — Silero VAD (legacy mod, Live mod kullanılmıyor)
 - ✅ **Windows UTF-8 fix** — stdout/stderr reconfigure, PYTHONIOENCODING=utf-8
+- ✅ **Computer use** — pyautogui + Gemini Vision otonom agent loop, ekranı görüp mouse/keyboard ile herhangi uygulamayı kontrol
 
 ### Açık Sorunlar
 
@@ -32,8 +33,6 @@ Mac'te de çalışıyor (geliştirme ortamı), asıl hedef platform Windows.
 
 - ⏳ Ayarlar ekranı (VAD threshold, ses, dil)
 - ⏳ Production build (PyInstaller + electron-builder)
-- ⏳ pyautogui görev executor (mouse/keyboard kontrolü)
-- ⏳ Computer use (v0.4) — browser-use + pyautogui + onay mekanizması
 - ⏳ Gemini function calling ajanı (v0.5) — araç çağrısını JSON olarak döndür, metin üretme
 
 ---
@@ -97,6 +96,7 @@ jarvan/
 │       ├── app_control.py             # open_app, close_app — cross-platform alias tablosu
 │       ├── browser.py                 # open_url, search_web (Google), hidden_search (Tavily→DDGS)
 │       ├── browser_agent.py           # browser-use ajan — otonom tarayıcı görevi
+│       ├── computer_use.py            # Otonom PC kontrolü — pyautogui + Gemini Vision agent loop
 │       ├── contacts.py                # contacts.json / contacts_phones.json lookup
 │       ├── mail.py                    # Gmail OAuth gönderim + compose URL fallback
 │       ├── weather.py                 # Hava durumu (requests tabanlı)
@@ -186,6 +186,7 @@ modes/prompts.py → mod system prompt
 | `browser_takeover` | `run_takeover_task()` | CDP'den mevcut browser'a bağlan |
 | `send_mail` | `asyncio.to_thread(send_mail)` | OAuth veya compose URL |
 | `send_whatsapp` | `asyncio.to_thread(send_whatsapp)` | URL scheme + pyautogui Enter |
+| `computer_use` | `run_computer_task()` | Otonom vision-action loop, pyautogui, in-flight lock |
 
 **`_summarize_search()`:** Ham Tavily/DDGS sonucunu Flash Lite ile Türkçe 2-4 cümleye indirir. Live'a JSON/URL gitmez → 1011 WebSocket kapanma riski azalır.
 
@@ -258,6 +259,43 @@ Kullanıcı "devral", "kaldığım yerden devam et" dediğinde. CDP :9223'e bağ
 # Windows: %APPDATA%\Opera Software\Opera GX Stable
 # Mac: ~/Library/Application Support/com.operasoftware.OperaGX
 ```
+
+---
+
+### `backend/tools/computer_use.py`
+
+Otonom bilgisayar kontrol ajanı — pyautogui + Gemini Vision. Tarayıcı dışı HER uygulamayı kontrol edebilir.
+
+**Sabitler:**
+```python
+MAX_STEPS = 15            # Sonsuz döngü koruması
+TASK_TIMEOUT_S = 300      # 5 dakika max
+SCREENSHOT_SIZE = (1280, 720)  # Vision model input
+ACTION_DELAY_S = 1.5      # UI tepkisi için bekleme
+```
+
+**Agent loop akışı:**
+```
+1. mss ile ekran yakala → 1280x720 JPEG thumbnail
+2. Gemini Vision'a gönder (system prompt + step prompt + screenshot)
+3. Model JSON action döner: {"action": "click", "x": 450, "y": 320, "reason": "..."}
+4. do_action() ile pyautogui yürüt
+5. 1.5s bekle (UI tepkisi)
+6. "done" gelene kadar veya 15 adıma kadar tekrarla
+7. Sonucu metin olarak LiveSession'a dön
+```
+
+**Desteklenen aksiyonlar:** `click`, `double_click`, `right_click`, `type_text`, `hotkey`, `scroll`, `move`, `drag`, `wait`, `done`
+
+**Koordinat dönüşümü:** Model 1280x720 thumbnail üzerinde düşünüyor → `_scale_coords()` gerçek monitör çözünürlüğüne + multi-monitor offset'e çevirir.
+
+**Türkçe karakter desteği:** `_clipboard_paste()` — pyautogui.write() yerine platform-native clipboard (Mac: pbcopy, Win: PowerShell Set-Clipboard) + Ctrl/Cmd+V
+
+**Hotkey normalizasyonu:** `_normalize_hotkey()` — `ctrl+c` Mac'te otomatik `command+c` olur.
+
+**Process-level task lock:** browser_agent.py ile aynı pattern — `_TASK_LOCK` + `_TASK_RUNNING`
+
+**Güvenlik:** `pyautogui.FAILSAFE = True` (mouse köşeye gidince dur), prompt'ta tehlikeli işlem yasağı
 
 ---
 
@@ -481,10 +519,10 @@ Native audio dialog, 1 FPS video stream, proaktif mod, Live session
 ### v0.3 ✅ — Context & Araçlar
 Conversation memory, browser agent, Gmail, WhatsApp, web arama, hava durumu, mod sistemi
 
-### v0.4 — Computer Use
-- `pyautogui` görev executor (mouse/keyboard)
-- Tüm aksiyonlarda sesli onay mekanizması ("X'i yapacağım, onaylıyor musun?")
-- Sandbox modu (tehlikeli görevleri simüle et)
+### v0.4 ✅ — Computer Use
+- `pyautogui` + Gemini Vision otonom agent loop (screenshot → action → repeat)
+- Koordinat dönüşümü (multi-monitor offset), Türkçe karakter desteği (clipboard paste)
+- Tehlikeli işlem koruması (FAILSAFE, prompt seviyesi yasak, onay mekanizması)
 
 ### v0.5 — Ultra-Low Latency Agentic
 - Gemini function calling ile metin yerine JSON tool response
