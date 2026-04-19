@@ -26,7 +26,6 @@ Mac'te de çalışıyor (geliştirme ortamı), asıl hedef platform Windows.
 
 ### Açık Sorunlar
 
-- ⚠️ **Browser agent — Windows Chrome açıyor**: `browser_task` CDP :9223'e bağlanamayınca fresh Chromium spawn ediyor; kullanıcının login'leri olmadığı için Gmail vb. çalışmıyor. Root cause belirsiz (Opera GX bulunamıyor mu, `launch_debug_browser` sessiz mi patlıyor?). Test komutu → bkz. Debug bölümü.
 - ⚠️ **VAD modu (legacy)**: Live kapalıyken aktif olan Whisper+VAD pipeline'ı maintenance modunda; ağırlıklı kullanım Live üzerinden.
 
 ### Planlanan
