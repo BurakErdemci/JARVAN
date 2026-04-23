@@ -49,3 +49,11 @@ release/
 
 # Logs
 *.log
+
+# JARVAN Specific
+backend/scratch/
+backend/blueprints/
+backend/data/
+backend/backend/
+backend/output.md
+backend/autonomous_output.py

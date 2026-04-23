@@ -541,3 +541,19 @@ Conversation memory, browser agent, Gmail, WhatsApp, web arama, hava durumu, mod
 
 **Burak Emre Erdemci**  
 [burakerdemci.com](https://burakerdemci.com) · [github.com/BurakErdemci](https://github.com/BurakErdemci)
+
+---
+
+## Gelişmeler (23 Nisan 2026)
+
+### ✅ Teknik İyileştirmeler
+- **Asenkron Ses Pipeline'ı:** `audio_queue` ve `_playback_loop` mimarisine geçildi. Ses çalma işlemi artık ana mantık döngüsünü bloklamıyor.
+- **Düşük Gecikmeli Etkileşim:** `OUTPUT_COOLDOWN_S` 0.4s'ye çekildi. Ses paketleri için "Lag Watchdog" eklendi.
+- **Cerrahi Analiz Motoru (Kimi k2.6):** `moonshotai/kimi-k2.6` (OpenRouter) entegrasyonu ile derin internet araştırması ve akıl yürütme (reasoning) yeteneği eklendi.
+- **Hafıza Odaklı Raporlama:** Araştırma sonuçları `last_research_result` olarak RAM'de saklanıyor.
+
+### 🎯 Ek Planlananlar
+- **Asla Pes Etme (Browser Fallback):** `deep_research` sonucu yetersiz gelirse, sistemin otomatik olarak `browser_task` aracını tetiklemesi için Python seviyesinde kontrol mekanizması.
+- **Obsidian Memory Integration:** Jarvan'ın araştırma sonuçlarını ve seninle olan önemli diyaloglarını doğrudan senin **Obsidian Vault**'una `.md` dosyaları olarak işlemesi ve oradan RAG (hafıza) çekmesi.
+- **Claude 4.x Modülü:** Ultra-hassas UI tasarımı ve karmaşık kodlama görevleri için **Claude Opus 4.7** ve **Sonnet 4.6**'nın opsiyonel modül olarak eklenmesi.
+- **Jarvan Macros (Deterministik Scriptler):** Steam, LoL, Spotify gibi sabit adımlı işlemler için LLM yerine Python/AppleScript tabanlı hızlı makrolar.

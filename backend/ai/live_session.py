@@ -24,6 +24,9 @@ from tools.computer_use import run_computer_task
 from tools.mail import send_mail
 from tools.spotify import play_spotify_track
 from tools.weather import get_weather
+from tools.advanced_research import deep_research
+from tools.developer import save_report, create_project_file, autonomous_develop
+from tools.obsidian import obsidian_manage
 from ai.wake_word import WakeWordEngine
 from ai.memory_manager import MemoryManager
 
@@ -297,6 +300,88 @@ FUNCTION_DECLARATIONS = [
         "description": "Jarvan'ı uyku moduna alır. Kullanıcı 'uyu', 'kendini kapat', 'dinlenmeye geç' dediğinde bu aracı çağır. Oturum kapanmaz ama Jarvan sadece 'Uyan Jarvan' dendiğinde tekrar cevap verir.",
         "parameters": {"type": "object", "properties": {}},
     },
+    {
+        "name": "deep_research",
+        "description": (
+            "Karmaşık, derinlemesine ve karşılaştırmalı internet araştırmaları için Kimi k2.6 modelini kullanır. "
+            "Uçak bileti karşılaştırma, ürün analizi, teknik konu araştırması gibi basit Google aramasının "
+            "yetmediği durumlarda bunu tercih et. 30-90sn sürebilir."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Araştırılacak konu veya soru (örn: 'İstanbul Londra uçak biletlerini karşılaştır')",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "save_report",
+        "description": "Kullanıcının Masaüstüne profesyonel bir analiz raporu (.md formatında) kaydeder. Derin araştırmalardan sonra mutlaka kullanılmalıdır.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "filename": {"type": "string", "description": "Kaydedilecek dosya adı (örn: 'Berlin_Seyahat_Raporu.md')"},
+                "content": {"type": "string", "description": "Raporun tüm içeriği (Markdown formatında, tablolar ve analizlerle birlikte)"}
+            },
+            "required": ["filename", "content"]
+        }
+    },
+    {
+        "name": "create_project_file",
+        "description": "Belirtilen dizinde bir dosya oluşturur ve içine kod yazar. Yazılım geliştirme görevleri için kullanılır.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "file_path": {"type": "string", "description": "Dosya yolu (örn: 'backend/main.py' veya 'Desktop/test.js')"},
+                "content": {"type": "string", "description": "Dosya içeriği veya kod blokları"}
+            },
+            "required": ["file_path", "content"]
+        }
+    },
+    {
+        "name": "crazy_mode_develop",
+        "description": (
+            "Multi-agent ekibini (Claude Architect, GPT Developer, Gemini Supervisor) otonom bir görev için toplar. "
+            "Karmaşık yazılım geliştirme, script yazma veya sistem tasarımı için bunu kullan. "
+            "30-120 saniye sürebilir. Çağırmadan önce 'ekibi topluyorum, biraz vakit alabilir' de ve SUS. "
+            "`blueprint_name` verirsen Claude'un tasarımı saklanır ve bir daha ücretsiz kullanılır."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "task": {"type": "string", "description": "Yapılacak teknik görev, Türkçe (örn: 'Hava durumu çeken bir python scripti yaz')"},
+                "blueprint_name": {"type": "string", "description": "Mimarinin kaydedileceği dosya adı (örn: 'HavaDurumuBlueprint')"},
+                "use_architect": {"type": "boolean", "description": "True ise Claude (Architect) mimari planı hazırlar. Daha pahalı ama daha kalitelidir."}
+            },
+            "required": ["task"]
+        }
+    },
+    {
+        "name": "obsidian_manage",
+        "description": (
+            "Obsidian not defterini yönetir. Not oluşturabilir, okuyabilir, arama yapabilir veya notları listeleyebilir. "
+            "Kullanıcı 'şunu not al', 'notlarımı oku', 'X hakkında ne not almışım' gibi şeyler dediğinde bunu kullan."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["create", "read", "search", "list"],
+                    "description": "Yapılacak işlem: create (oluştur), read (oku), search (ara), list (listele)"
+                },
+                "title": {"type": "string", "description": "Not başlığı (create ve read için gerekli)"},
+                "content": {"type": "string", "description": "Not içeriği (sadece create için)"},
+                "query": {"type": "string", "description": "Arama sorgusu (sadece search için)"},
+                "folder": {"type": "string", "description": "Opsiyonel klasör yolu"}
+            },
+            "required": ["action"]
+        }
+    },
 ]
 
 TOOL_IMPL = {
@@ -323,16 +408,19 @@ INPUT_SAMPLE_RATE = 16000
 OUTPUT_SAMPLE_RATE = 24000
 INPUT_CHUNK_MS = 32
 INPUT_CHUNK = int(INPUT_SAMPLE_RATE * INPUT_CHUNK_MS / 1000)
-OUTPUT_COOLDOWN_S = 0.8  # Jarvan konuşurken + bittikten sonra kısa sessizlik (Yankıyı engellemek için 0.8'e çıkarıldı)
+OUTPUT_COOLDOWN_S = 0.4  # Daha hızlı dinleme moduna geçiş
 
 RESEARCH_HINT = (
-    "\n\n[ARAŞTIRMA AKIŞI — ZORUNLU KURALLAR]\n"
-    "Kullanıcı fiyat, bilet, puan, tarih, ürün, karşılaştırma, haber, 'X nedir/kim/ne kadar' gibi somut güncel bilgi istediğinde:\n"
-    "1. HER ZAMAN `search_web(query)` aracını çağır. Arka planda canlı web araması yapar. Sana dönen sonuç ZATEN Türkçe 2-4 cümlelik bir `summary` alanı içerir — sistem ham sonuçları arka planda Flash Lite ile özetleyip sana sunar. Aramadan ASLA fiyat, havayolu adı, puan, tarih, URL ÜRETME. (Hava durumu için get_weather kullan.)\n"
-    "2. Çağrı öncesi kısaca 'Hemen araştırıyorum...' de ve SUS, sonucu bekle.\n"
-    "3. Sonuç gelince `summary` alanını kendi ağzınla, biraz yeniden düzenleyerek söyle. Kaynak isimlerini ('Metacritic'e göre...', 'NotebookCheck'e göre...') kullanabilirsin — bu bilgi summary içinde zaten geçiyor. URL ASLA söyleme, uzun linkleri JSON'a yazma.\n"
-    "4. Sonra 'İstersen birincisini açabilirim' diye TEKLİF et. Kullanıcı 'aç', 'göster', 'evet' derse `open_result(index)` çağır (1, 2 veya 3). URL hatırlamana gerek yok.\n"
-    "5. Arama dışı, kullanıcının açıkça söylediği bir domain için `open_url` kullan. Araştırma sonucunu açmak için DAİMA `open_result`."
+    "\n\n[ARAŞTIRMA VE ANALİZ STRATEJİSİ]\n"
+    "1. ÖNCE HAFIZA: Herhangi bir şeyi araştırmadan önce 'Daha önce bu konuda bir not almış mıyım?' diye düşün. Gerekirse `obsidian_manage(action='search')` ile kendi hafızanı kontrol et.\n"
+    "2. BASİT BİLGİ: 'Hava durumu nasıl?', 'Dolar kaç TL?' gibi anlık ve tek cevaplık sorular için `search_web` veya `get_weather` kullan.\n"
+    "3. DERİN ANALİZ (VARSAYILAN): Karmaşık sorularda direkt `deep_research(query)` kullan.\n"
+    "4. ARŞİVLEME (ZORUNLU): Her `deep_research` veya `browser_task` sonrası, elde ettiğin ÖZETİ veya RAPORU mutlaka `obsidian_manage(action='create')` ile kaydet. "
+    "Başlığı araştırmaya uygun seç (Örn: 'Berlin_Gezi_Analizi') ve mutlaka `[[Araştırmalar]]` notuna link ver.\n"
+    "5. [ÇOK KRİTİK] YALAN SÖYLEME VE KAYTARMA YASAĞI: Kullanıcı bir bilginin kaydedilmesini, araştırılmasını veya bir işlemin yapılmasını istediğinde, "
+    "SADECE 'yaptım', 'kaydettim' diyerek geçiştirme. KESİNLİKLE ilgili aracı (tool) çağırmalısın. "
+    "Aracı çağırmadan ve araçtan başarılı (`ok: true`) sonucu almadan asla 'hallettim' deme. "
+    "Aracı kullanmak yerine sözle geçiştirmek 'Demacia Standartları'na aykırıdır ve ağır bir hatadır."
 )
 
 TOOL_CONFIRMATION_HINT = (
@@ -352,7 +440,13 @@ TOOL_CONFIRMATION_HINT = (
     "WhatsApp için aynı kalıp. "
     "Kullanıcı 'evet', 'tamam', 'at', 'gönder', 'onaylıyorum' gibi NET onay vermeden aracı ÇAĞIRMA. "
     "'Belki', 'bilmiyorum', 'şey' gibi belirsiz cevaplar → tekrar sor.\n"
-    "- Kullanıcı 'iptal', 'dur', 'boşver' derse aracı çağırma, kısaca 'tamam iptal ettim' de."
+    "- Kullanıcı 'iptal', 'dur', 'boşver' derse aracı çağırma, kısaca 'tamam iptal ettim' de.\n\n"
+    "[DOĞALLIK VE AKICILIK KURALLARI]\n"
+    "1. TEKNİK TERİMLERDEN KAÇIN: 'Notlarıma bakıyorum', 'Hafızamı tarıyorum', 'Sisteme kaydediyorum', 'Tool çağırıyorum' gibi teknik ve robotik ifadeleri ASLA kullanma.\n"
+    "2. ÖZ BİLGİ GİBİ DAVRAN: Obsidian'dan veya hafızadan bir bilgi çekerken, bunu sanki o an kendin hatırlıyormuşsun gibi doğal bir şekilde söyle. "
+    "Örn: 'Hatırladığım kadarıyla Mad Men en sevdiğin diziydi' veya direkt 'Tabii, Sherlock ve Breaking Bad favorilerin arasında.'\n"
+    "3. SESSİZ ÇALIŞMA: Arka planda bir araç (obsidian_manage, search_web vb.) çalışırken süreci anlatmak yerine sessizce bekle veya doğal bir 'Hımm...' çekip sonucu bekle.\n"
+    "4. HEDEF: Kullanıcıya bir veritabanıyla değil, onunla yaşayan ve onu gerçekten tanıyan bir dostla konuştuğu hissini ver."
 )
 
 VISION_BEHAVIOR_HINT_FALLBACK = (
@@ -383,6 +477,25 @@ COMPUTER_USE_HINT = (
     "- Riskli istekler (dosya silme, format, kritik ayar) → ÖNCE ONAY AL."
 )
 
+LEARNING_PROTOCOL_HINT = (
+    "\n\n[OBSIDIAN NÖRAL AĞ MİMARİSİ - ZORUNLU]\n"
+    "Senin hafızan hiyerarşik bir ağ yapısındadır. Her yeni not mutlaka bir üst düğüme bağlı olmalıdır.\n"
+    "1. MERKEZİ DÜĞÜM: Tüm notların en tepesinde `[[BEYİN]]` notu bulunur.\n"
+    "2. ANA KATEGORİLER: \n"
+    "   - Kullanıcı bilgileri -> `[[Kullanıcı Davranışları]]` altına,\n"
+    "   - Araştırma sonuçları -> `[[Araştırmalar]]` altına,\n"
+    "   - Teknik işler/kodlar -> `[[Projeler]]` altına,\n"
+    "   - Kendi gelişimin -> `[[Jarvan Gelişim Günlüğü]]` altına bağlanmalıdır.\n"
+    "3. BAĞLANTI KURALI: Yeni bir not oluştururken (action='create'), içeriğin sonuna mutlaka 'Bağlantı: [[İlgili Kategori]]' şeklinde WikiLink ekle. "
+    "Eğer not mevcut bir konuyla ilgiliyse (Örn: Unity), o konunun notuna da (`[[Unity]]`) link ver.\n"
+    "4. ARAMA DİSİPLİNİ: Bir şeyi araştırmadan önce mutlaka `search` yap. Eğer sonuç çoksa `list` yaparak tüm başlıkları oku. "
+    "Kullanıcının sorduğu şeyi 'Hangi notta olabilir?' diye mantık yürüterek ara.\n"
+    "5. OKUMA ZORUNLULUĞU (HALİSÜNASYON ENGELİ): Bir notun ismini bulman, içeriğini bildiğin anlamına gelmez! "
+    "Kullanıcıya notun içeriğiyle ilgili bilgi vermeden önce MUTLAKA `obsidian_manage(action='read', title='...')` yaparak içeriği kelimesi kelimesine oku. "
+    "Notu okumadan asla tahmin yürütme, popüler oyunları/müzikleri uydurma! Bilmiyorsan 'Bulamadım, neydi?' diye sor.\n"
+    "6. HEDEF: Grafik görünümünde (Graph View) asla tek başına asılı duran (orphan) bir nokta bırakma. Her şey BEYİN'e ulaşan bir yolun parçası olmalı."
+)
+
 
 class LiveSession:
     def __init__(
@@ -409,6 +522,9 @@ class LiveSession:
         # Hafıza Yöneticisi
         self.memory_manager = MemoryManager()
         self.memory_summary = self.memory_manager.get_summary_for_prompt()
+        self.last_research_result = None
+        self.audio_queue = asyncio.Queue()  # Ses kuyruğu
+        self.playback_end_time = 0.0
 
         # Wake Word Motoru (Yerel)
         try:
@@ -438,6 +554,7 @@ class LiveSession:
             + TOOL_CONFIRMATION_HINT
             + RESEARCH_HINT
             + COMPUTER_USE_HINT
+            + LEARNING_PROTOCOL_HINT
             + "\n\n[SPOTIFY İPUCU]\n"
             "Kullanıcı 'bunun adı ne bilmiyom playlistimi çal' gibi tuhaf cümleler kurabilir. "
             "Bu cümlelerin içindeki 'bunun adı ne bilmiyom' ifadesi aslında çalma listesinin gerçek adıdır. "
@@ -511,6 +628,7 @@ class LiveSession:
         )
         try:
             while not self.should_stop():
+                loop_start = time.monotonic()
                 data = await asyncio.to_thread(stream.read, INPUT_CHUNK, False)
                 
                 # --- Wake Word / Sleep Logic ---
@@ -532,6 +650,11 @@ class LiveSession:
                 if self.is_speaking or (time.monotonic() - self.last_output_time < OUTPUT_COOLDOWN_S):
                     continue
                 
+                # --- Lag Monitoring ---
+                loop_end = time.monotonic()
+                if loop_end - loop_start > 0.05:  # 50ms'den fazla sürerse uyar
+                    print(f"[Jarvan] LAG UYARISI: Transmit loop yavaşladı! ({loop_end - loop_start:.3f}s)")
+
                 await session.send_realtime_input(
                     audio=types.Blob(data=data, mime_type=f"audio/pcm;rate={INPUT_SAMPLE_RATE}")
                 )
@@ -544,6 +667,26 @@ class LiveSession:
             stream.close()
             p.terminate()
 
+    async def _playback_loop(self, out_stream):
+        """Sesi arka planda kuyruktan çeker ve hoparlöre gönderir (Bloklamaz)."""
+        try:
+            while not self.should_stop():
+                audio_data = await self.audio_queue.get()
+                if audio_data:
+                    self.is_speaking = True
+                    self.last_output_time = time.monotonic()
+                    # Sesi parçalar halinde yaz
+                    await asyncio.to_thread(out_stream.write, audio_data)
+                    self.audio_queue.task_done()
+                    
+                    # Kuyruk boşaldıysa ve ses bittiyse sessizliğe dön (Echo Prevention)
+                    if self.audio_queue.empty():
+                        await asyncio.sleep(0.3)  # Kısa bir tampon bekleme
+                        if self.audio_queue.empty():
+                            self.is_speaking = False
+        except Exception as e:
+            self.on_log("error", f"Playback loop hatası: {e}", None)
+
     async def _receive_loop(self, session):
         p = pyaudio.PyAudio()
         out_stream = p.open(
@@ -552,6 +695,9 @@ class LiveSession:
             rate=OUTPUT_SAMPLE_RATE,
             output=True,
         )
+        # Ses oynatma döngüsünü başlat
+        playback_task = asyncio.create_task(self._playback_loop(out_stream))
+        
         in_buf = ""
         out_buf = ""
         try:
@@ -561,23 +707,13 @@ class LiveSession:
                         break
 
                     if response.data:
-                        self.is_speaking = True
-                        now = time.monotonic()
-                        self.last_output_time = now
-                        # Bu chunk'ın çalma süresini playback_end_time'a ekle
-                        chunk_duration = len(response.data) / (OUTPUT_SAMPLE_RATE * 2)
-                        self.playback_end_time = max(self.playback_end_time, now) + chunk_duration
-                        await asyncio.to_thread(out_stream.write, response.data)
-                        self.last_output_time = time.monotonic()
+                        # Sesi kuyruğa at, bekleme!
+                        await self.audio_queue.put(response.data)
 
                     tc = getattr(response, "tool_call", None)
                     if tc and getattr(tc, "function_calls", None):
-                        wait_s = self.playback_end_time - time.monotonic()
-                        if wait_s > 0:
-                            await asyncio.sleep(wait_s + 0.15)
-                        self.is_speaking = False
-                        # create_task: ses beklendi, audio tamam. Artık receive_loop
-                        # dönmeye devam eder → WebSocket ping-pong işlenir → session düşmez.
+                        # Gecikme YOK! Aracı hemen çalıştır. 
+                        # Mikrofon zaten is_speaking yüzünden playback_loop tarafından kapalı tutuluyor.
                         task = asyncio.create_task(self._handle_tool_calls(session, tc.function_calls))
                         task.add_done_callback(
                             lambda t: self.on_log("error", f"tool task hata: {t.exception()}", None)
@@ -782,6 +918,71 @@ class LiveSession:
                 except Exception as e:
                     result = {"ok": False, "error": str(e)}
                 self.on_log("system", f"[tool sonuç] {result}", None)
+            elif name == "deep_research":
+                query = args.get("query", "")
+                self.on_log("system", f"[tool] deep_research({query[:80]}...)", None)
+                try:
+                    raw = await asyncio.wait_for(deep_research(query), timeout=300)
+                    self.last_research_result = raw  # Sonucu hafızaya al
+                    result = {"ok": True, "result": raw}
+                except asyncio.TimeoutError:
+                    result = {"ok": False, "error": "Kimi araştırması 5 dakikada bitmedi, zaman aşımı."}
+                except Exception as e:
+                    result = {"ok": False, "error": str(e)}
+                self.on_log("system", f"[tool sonuç] {result}", None)
+            elif name == "save_report":
+                filename = args.get("filename", "Rapor.md")
+                content = args.get("content", "")
+                
+                # Eğer content boşsa veya Gemini gönderdiyse, hafızadaki sonucu kullan
+                if (not content or len(content) < 10) and self.last_research_result:
+                    content = self.last_research_result
+                    
+                self.on_log("system", f"[tool] save_report({filename}) [Hafızadan: {bool(not content)}]", None)
+                try:
+                    result = save_report(filename, content)
+                except Exception as e:
+                    result = {"ok": False, "error": str(e)}
+                self.on_log("system", f"[tool sonuç] {result}", None)
+            elif name == "crazy_mode_develop":
+                task_desc = args.get("task", "")
+                blue_name = args.get("blueprint_name")
+                use_arch = bool(args.get("use_architect", True))
+                self.on_log("system", f"[tool] crazy_mode_develop({task_desc[:80]}...)", None)
+                try:
+                    # Multi-agent döngüsünü başlat
+                    raw = await autonomous_develop(task_desc, use_architect=use_arch, blueprint_name=blue_name)
+                    
+                    # Kod her halükarda kaydedilsin (En okay versiyon)
+                    current_code = raw.get("code", "")
+                    if current_code:
+                        f_name = f"backend/scratch/{blue_name or 'autonomous_output'}.py"
+                        create_project_file(f_name, current_code)
+                        
+                        # Obsidian'a not al
+                        is_ok = raw.get("ok", False)
+                        status = "✅ ONAYLANDI" if is_ok else "⚠️ KISMEN ONAYLANDI (Kritik: " + str(raw.get("review"))[:100] + "...)"
+                        report = f"# Multi-Agent Geliştirme Raporu\n\n**Durum:** {status}\n**Görev:** {task_desc}\n\n**Dosya:** {f_name}\n\n**Denetçi Eleştirisi:**\n{raw.get('review', 'N/A')}\n\n--- \nBağlantı: [[Projeler]]"
+                        obsidian_manage(action="create", title=f"Geliştirme_{blue_name or 'Otonom'}", content=report)
+                        
+                        if is_ok:
+                            result = {"ok": True, "message": f"Ekip görevi başarıyla tamamladı. Dosya: {f_name}", "review": raw.get("review")}
+                        else:
+                            result = {"ok": True, "message": f"Ekip kodu yazdı ama denetçi ufak kusurlar buldu. Dosya yine de kaydedildi: {f_name}", "review": raw.get("review")}
+                    else:
+                        result = {"ok": False, "error": raw.get("error", "kod üretilemedi")}
+                except Exception as e:
+                    result = {"ok": False, "error": str(e)}
+                self.on_log("system", f"[tool sonuç] {result}", None)
+            elif name == "create_project_file":
+                path = args.get("file_path", "")
+                content = args.get("content", "")
+                self.on_log("system", f"[tool] create_project_file({path})", None)
+                try:
+                    result = create_project_file(path, content)
+                except Exception as e:
+                    result = {"ok": False, "error": str(e)}
+                self.on_log("system", f"[tool sonuç] {result}", None)
             elif name == "see_screen":
                 self.on_log("system", "[tool] see_screen()", None)
                 try:
@@ -814,9 +1015,23 @@ class LiveSession:
                         else:
                             raw_res = await asyncio.to_thread(open_url, url)
                             if raw_res.get("ok"):
-                                result = {"ok": True, "note": "Sayfa tarayıcıda başarıyla açıldı."}
+                                result = raw_res
                             else:
                                 result = raw_res
+                except Exception as e:
+                    result = {"ok": False, "error": str(e)}
+                self.on_log("system", f"[tool sonuç] {result}", None)
+            elif name == "obsidian_manage":
+                self.on_log("system", f"[tool] obsidian_manage({args})", None)
+                try:
+                    result = await asyncio.to_thread(
+                        obsidian_manage,
+                        action=args.get("action"),
+                        title=args.get("title"),
+                        content=args.get("content"),
+                        folder=args.get("folder"),
+                        query=args.get("query")
+                    )
                 except Exception as e:
                     result = {"ok": False, "error": str(e)}
                 self.on_log("system", f"[tool sonuç] {result}", None)
