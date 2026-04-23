@@ -1,0 +1,24 @@
+{
+  "user": {
+    "name": "Burak",
+    "role": "Developer",
+    "preferences": {
+      "spotify_playlists": {
+        "1": "bunun adı ne bilmiyom",
+        "2": "Keçi playlist",
+        "3": "Mental çöküntü",
+        "4": "Raptimee"
+      }
+    }
+  },
+  "knowledge": {
+    "projects": [
+      {
+        "name": "JARVAN",
+        "role": "Always-on Assistant",
+        "status": "In Development (LTM Phase)"
+      }
+    ]
+  },
+  "insights": []
+}

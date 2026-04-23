@@ -25,6 +25,9 @@ from tools.mail import send_mail
 from tools.spotify import play_spotify_track
 from tools.weather import get_weather
 from ai.wake_word import WakeWordEngine
+from ai.memory_manager import MemoryManager
+
+# ─── Konfigürasyon ──────────────────────────────────────────────────
 
 FUNCTION_DECLARATIONS = [
     {
@@ -240,25 +243,32 @@ FUNCTION_DECLARATIONS = [
         },
     },
     {
-        "name": "spotify_play",
-        "description": (
-            "Spotify'da şarkı aratıp çalmayı deterministic olarak dener. "
-            "Örnek: 'Spotify'da Tarkan Kuzu Kuzu çal'. "
-            "Mümkün olduğunda bunu `computer_use` yerine tercih et."
-        ),
+        "name": "play_spotify_track",
+        "description": "Spotify'da belirli bir şarkıyı veya çalma listesini arar ve çalmaya başlar.",
         "parameters": {
             "type": "object",
             "properties": {
-                "track": {
-                    "type": "string",
-                    "description": "Çalınacak şarkı veya arama sorgusu",
-                },
-                "artist": {
-                    "type": "string",
-                    "description": "Opsiyonel sanatçı adı",
-                },
+                "track": {"type": "string", "description": "Kullanıcının söylediği şarkı VEYA çalma listesi isminin TAMAMI (Örn: 'bunun adı ne bilmiyom', 'Raptimee'). Lütfen 'playlist' gibi jenerik kelimeler yerine kullanıcının telaffuz ettiği özel ismi kullan."},
+                "artist": {"type": "string", "description": "Sanatçı adı (opsiyonel)."},
+                "is_playlist": {"type": "boolean", "description": "Eğer aranan şey bir çalma listesi ise True olmalı."},
+                "shuffle": {"type": "boolean", "description": "Eğer çalma listesi rastgele (karışık) çalınacaksa True olmalı."}
             },
             "required": ["track"],
+        },
+    },
+    {
+        "name": "spotify_control",
+        "description": "Spotify çalma kontrollerini (duraklat, devam et, sonraki/önceki şarkı) yönetir.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string", 
+                    "enum": ["pause", "play", "next", "previous", "toggle"],
+                    "description": "Yapılacak işlem: pause (durdur), play (devam et), next (sıradaki), previous (önceki), toggle (oynat/duraklat)."
+                }
+            },
+            "required": ["action"],
         },
     },
     {
@@ -396,7 +406,10 @@ class LiveSession:
         self._inflight_tools: set[str] = set()  # duplicate tool call koruması
         self._tool_cooldown: dict[str, float] = {}  # son tamamlanma zamanı
         self.is_asleep = True  # 7/24 dinleme modu için uyku durumu (Default Uyku)
-        
+        # Hafıza Yöneticisi
+        self.memory_manager = MemoryManager()
+        self.memory_summary = self.memory_manager.get_summary_for_prompt()
+
         # Wake Word Motoru (Yerel)
         try:
             self.ww_engine = WakeWordEngine("models/vosk-tr", sample_rate=INPUT_SAMPLE_RATE)
@@ -411,16 +424,24 @@ class LiveSession:
 
     async def run(self):
         active_model = MODEL_FLASH_LIVE
+        
+        # Başlangıç talimatlarına Hafıza Özetini ekle
         system_instruction = (
             self.system_prompt
+            + "\n\n" + self.memory_summary
             + "\n\n[UYKU MODU KURALLARI]\n"
             "Sen 7/24 uyanık kalabilen bir asistansın. Kullanıcı 'uyu', 'kendini kapat', 'hoşçakal', 'dinlenmeye geç' gibi veda cümleleri kurarsa "
-            "mutlaka `sleep_mode()` aracını çağır. Uyumadan önce kullanıcıya nazikçe veda et (Örn: 'Tamamdır Burak, ben buralardayım, uyanmamı istersen seslenmen yeterli.'). "
-            "Uyku modundayken sesin Gemini'ye gitmeyecek, sadece yerel olarak 'Uyan Jarvan' demeni bekleyeceğim."
+            "mutlaka `sleep_mode()` aracını çağır. Uyumadan önce kullanıcıya çok kısa ve net şekilde veda et "
+            "(Örn: 'Tamamdır kendimi kapatıyorum, hoşçakal.'). Sakın veda ederken 'beni uyandır', 'uyan de' gibi tetikleyici kelimeleri KULLANMA. "
+            "Uyku modundayken sesin Gemini'ye gitmeyecek, sadece yerel olarak 'Uyan' demeni bekleyeceğim."
             + (VISION_BEHAVIOR_HINT_PROACTIVE if self.send_video else VISION_BEHAVIOR_HINT_FALLBACK)
             + TOOL_CONFIRMATION_HINT
             + RESEARCH_HINT
             + COMPUTER_USE_HINT
+            + "\n\n[SPOTIFY İPUCU]\n"
+            "Kullanıcı 'bunun adı ne bilmiyom playlistimi çal' gibi tuhaf cümleler kurabilir. "
+            "Bu cümlelerin içindeki 'bunun adı ne bilmiyom' ifadesi aslında çalma listesinin gerçek adıdır. "
+            "Bu tarz durumları bir kafa karışıklığı sanma ve kullanıcının belirttiği ismi aynen `track` parametresine yaz."
         )
         
         if self.conversation_memory:
@@ -453,7 +474,7 @@ class LiveSession:
             async with self.client.aio.live.connect(model=active_model, config=config) as session:
                 self.on_log("system", f"Live bağlandı ({active_model}) — ses: {VOICE_NAME}.", None)
                 if self.is_asleep:
-                    self.on_log("system", "Jarvan uyku modunda (Pusu). 'Uyan Jarvan' diyerek uyandırabilirsin.", None)
+                    self.on_log("system", "Jarvan 7/24 dinleme modunda. 'Uyan' diyerek uyandırabilirsin.", None)
 
                 tasks = [
                     asyncio.create_task(self._mic_loop(session)),
@@ -496,13 +517,13 @@ class LiveSession:
                 if self.is_asleep:
                     if self.ww_engine:
                         result = self.ww_engine.process_data(data)
-                        if result and "uyan" in result:
+                        if result == "uyan":
                             self.on_log("system", "Wake Word yakalandı: UYAN!", None)
                             self.is_asleep = False
                             # Gemini'ye uyandığını ve selam vermesi gerektiğini söyle
                             try:
                                 await session.send_realtime_input(
-                                    text="Kullanıcı seni 'Uyan Jarvan' diyerek uyandırdı. Ona sıcak ve enerjik bir karşılama yap."
+                                    text="Kullanıcı seni 'Uyan' diyerek uyandırdı. Sadece 'Selam Burak, nasıl yardımcı olabilirim?' diyerek onu karşıla."
                                 )
                             except Exception as e:
                                 self.on_log("error", f"Selam tetikleme hatası (devam ediliyor): {e}", None)
@@ -739,16 +760,25 @@ class LiveSession:
                 except Exception as e:
                     result = {"ok": False, "error": str(e)}
                 self.on_log("system", f"[tool sonuç] {result}", None)
-            elif name == "spotify_play":
-                track = args.get("track", "")
-                artist = args.get("artist")
-                self.on_log("system", f"[tool] spotify_play(track={track!r}, artist={artist!r})", None)
+            elif name == "play_spotify_track":
+                from tools.spotify import play_spotify_track
+                self.on_log("system", f"[tool] play_spotify_track({args})", None)
                 try:
-                    raw = await play_spotify_track(track, artist)
-                    if raw.get("ok"):
-                        result = {"ok": True, "result": raw.get("result", "")}
-                    else:
-                        result = {"ok": False, "error": raw.get("error", "spotify görevi başarısız")}
+                    result = await play_spotify_track(
+                        track=args.get("track"),
+                        artist=args.get("artist"),
+                        is_playlist=args.get("is_playlist", False),
+                        shuffle=args.get("shuffle", False)
+                    )
+                except Exception as e:
+                    result = {"ok": False, "error": str(e)}
+                self.on_log("system", f"[tool sonuç] {result}", None)
+            elif name == "spotify_control":
+                from tools.spotify import control_spotify
+                action = args.get("action")
+                self.on_log("system", f"[tool] spotify_control(action={action})", None)
+                try:
+                    result = await control_spotify(action)
                 except Exception as e:
                     result = {"ok": False, "error": str(e)}
                 self.on_log("system", f"[tool sonuç] {result}", None)

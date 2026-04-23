@@ -16,11 +16,13 @@ class WakeWordEngine:
         self.sample_rate = sample_rate
 
     def process_data(self, data: bytes) -> str | None:
-        """Ses verisini işler ve eğer anahtar kelime bulursa döner."""
+        """Ses verisini işler ve eğer 'uyan' yakalanırsa döner."""
         if self.rec.AcceptWaveform(data):
             res = json.loads(self.rec.Result())
-            text = res.get("text", "")
-            if text:
+            text = res.get("text", "").lower()
+            if "uyan" in text:
+                return "uyan"
+            if "uyu" in text or "kapat kendini" in text:
                 return text
         return None
 

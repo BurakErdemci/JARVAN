@@ -66,27 +66,50 @@ def _get_reliable_spotify_area() -> tuple[int, int, int, int]:
     return 0, 25, sw, sh - 25  # 25px macOS menü çubuğu
 
 
-def _click_top_result_play_button():
-    """Arama sonuçlarındaki Top Result kartının yeşil play butonuna tıklar.
-
-    Önce kart üzerine hover yapılır (buton görünür olsun), sonra tıklanır.
+def _click_top_result_play_button(is_playlist: bool = False):
+    """Arama sonuçlarındaki Top Result kartına veya Play butonuna tıklar.
+    
+    is_playlist=True ise kartın kendisine tıklar (içine girmek için).
+    is_playlist=False ise sağdaki yeşil play butonuna tıklar.
     """
     x, y, w, h = _get_reliable_spotify_area()
 
-    # Top Result kartının merkezine hover yap (play butonunu görünür kıl)
-    card_x = int(round(x + w * 0.50))
-    card_y = int(round(y + h * 0.20))
-    print(f"      [spotify] Hovering card: ({card_x}, {card_y})", flush=True)
-    pyautogui.moveTo(card_x, card_y, duration=0.2)
-    time.sleep(0.4)
+    if is_playlist:
+        # Çalma listesi kartının ortasına tıkla (içine girsin)
+        click_x = int(round(x + w * 0.50))
+        click_y = int(round(y + h * 0.20))
+        print(f"      [spotify] Entering playlist card: ({click_x}, {click_y})", flush=True)
+        pyautogui.moveTo(click_x, click_y, duration=0.2)
+        time.sleep(0.1)
+        pyautogui.click()
+    else:
+        # YENİ SPOTIFY UI: 'Şarkılar' (Songs) listesinin ilk sırasındaki küçük resme odaklan
+        # Bu nokta genellikle pencerenin X:%54, Y:%28 civarındadır.
+        play_x = int(round(x + w * 0.54))
+        play_y = int(round(y + h * 0.28))
+        print(f"      [spotify] New UI: Clicking first song thumbnail play button at ({play_x}, {play_y})", flush=True)
+        pyautogui.moveTo(play_x, play_y, duration=0.2)
+        time.sleep(0.2)
+        pyautogui.click()
 
-    # Yeşil play butonu: kartın sağ tarafında
-    play_x = int(round(x + w * 0.72))
-    play_y = int(round(y + h * 0.22))
-    pyautogui.moveTo(play_x, play_y, duration=0.15)
-    time.sleep(0.15)
-    pyautogui.click(play_x, play_y)
-    print(f"      [spotify] Play button clicked: ({play_x}, {play_y})", flush=True)
+
+def _click_playlist_playback_controls(shuffle: bool = True):
+    """Playlist sayfası içindeki Shuffle ve Play butonlarına tıklar."""
+    x, y, w, h = _get_reliable_spotify_area()
+
+    if shuffle:
+        # Karıştır (Shuffle) butonu: Büyük yeşil butonun biraz sağında
+        shuffle_x = int(round(x + w * 0.38))
+        shuffle_y = int(round(y + h * 0.40))
+        print(f"      [spotify] Clicking Shuffle: ({shuffle_x}, {shuffle_y})", flush=True)
+        pyautogui.click(shuffle_x, shuffle_y)
+        time.sleep(0.3)
+
+    # Büyük Yeşil Play butonu
+    main_play_x = int(round(x + w * 0.27))
+    main_play_y = int(round(y + h * 0.40))
+    print(f"      [spotify] Clicking Main Play: ({main_play_x}, {main_play_y})", flush=True)
+    pyautogui.click(main_play_x, main_play_y)
 
 
 def _normalize_query(track: str, artist: str | None = None) -> str:
@@ -144,9 +167,14 @@ async def control_spotify(action: str) -> dict:
     return {"ok": True, "result": f"Spotify: {action} komutu gönderildi."}
 
 
-async def play_spotify_track(track: str | None = None, artist: str | None = None) -> dict:
-    """Spotify'da şarkı arar ve yeşil play butonuyla çalar. 
-    Eğer track verilmezse sadece oynatmayı başlatır.
+async def play_spotify_track(
+    track: str | None = None, 
+    artist: str | None = None,
+    is_playlist: bool = False,
+    shuffle: bool = False
+) -> dict:
+    """Spotify'da şarkı veya çalma listesi arar ve çalar.
+    is_playlist=True ise listenin içine girip shuffle açabilir.
     """
     if not track:
         return await control_spotify("play")
@@ -182,9 +210,16 @@ async def play_spotify_track(track: str | None = None, artist: str | None = None
         pyautogui.press("enter")
         await asyncio.sleep(1.2) 
 
-        # 6. Top Result kartındaki yeşil play butonuna tıkla
+        # 6. Sonuçlara göre çalmayı başlat
         if IS_MAC:
-            await asyncio.to_thread(_click_top_result_play_button)
+            if is_playlist:
+                # Önce çalma listesine gir
+                await asyncio.to_thread(_click_top_result_play_button, is_playlist=True)
+                await asyncio.sleep(1.5) # Sayfanın yüklenmesini bekle
+                # Shuffle ve Play butonlarına bas
+                await asyncio.to_thread(_click_playlist_playback_controls, shuffle=shuffle)
+            else:
+                await asyncio.to_thread(_click_top_result_play_button, is_playlist=False)
         else:
             # Windows fallback: Tab ile navigasyon
             for _ in range(3):
