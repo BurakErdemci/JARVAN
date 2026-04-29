@@ -140,6 +140,7 @@ class Pipeline:
                     send_video=self.proactive_enabled,
                     conversation_memory=self.conversation_memory,
                     search_cache=self.search_cache,
+                    on_event=self.emit,
                 )
 
                 start_ts = time.monotonic()

@@ -51,9 +51,9 @@ export function TitleBar({ connected }: Props) {
           <Pin size={11} strokeWidth={2} className={pinned ? "rotate-45" : ""} />
         </button>
         <button
-          onClick={() => window.jarvan.minimize()}
+          onClick={() => window.jarvan.hide()}
           className="grid h-6 w-6 place-items-center rounded-md text-ink-muted transition-colors hover:bg-surface-raised hover:text-ink-soft"
-          title="Gizle"
+          title="Aşağı at"
         >
           <Minus size={12} strokeWidth={2} />
         </button>

@@ -63,6 +63,8 @@ export function useBackend() {
               ? combined.slice(combined.length - MAX_LOGS)
               : combined;
           });
+        } else if (msg.type === "window_hide") {
+          window.jarvan?.hide();
         }
       } catch (e) {
         console.error("WS parse error:", e);

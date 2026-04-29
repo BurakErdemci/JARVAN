@@ -1,19 +1,12 @@
-"""Deterministic calculator actions for known simple tasks."""
+"""Deterministic calculator actions for known simple tasks (Windows Optimize)."""
 
 import ast
 import asyncio
-import platform
 import re
-import subprocess
 import time
-
 import pyautogui
-
+import pygetwindow as gw
 from tools.app_control import open_app
-
-IS_MAC = platform.system() == "Darwin"
-IS_WIN = platform.system() == "Windows"
-
 
 def extract_expression(task: str) -> str | None:
     text = (task or "").lower()
@@ -23,7 +16,6 @@ def extract_expression(task: str) -> str | None:
         return None
     left, op, right = match.groups()
     return f"{left}{op}{right}"
-
 
 def safe_eval_expression(expr: str) -> str:
     allowed_nodes = (
@@ -46,53 +38,18 @@ def safe_eval_expression(expr: str) -> str:
         return str(int(value))
     return str(value)
 
-
-def _run_osascript(script: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["osascript", "-e", script],
-        capture_output=True,
-        text=True,
-        timeout=5,
-    )
-
-
-def _press_calculator_keys_macos(expr: str):
-    keycode_map = {
-        "0": 82,
-        "1": 83,
-        "2": 84,
-        "3": 85,
-        "4": 86,
-        "5": 87,
-        "6": 88,
-        "7": 89,
-        "8": 91,
-        "9": 92,
-        "+": 69,
-        "-": 78,
-        "*": 67,
-        "/": 75,
-        ".": 65,
-        "=": 76,
-        "C": 8,
-    }
-
-    sequence = ["C", *list(expr), "="]
-    for token in sequence:
-        keycode = keycode_map.get(token)
-        if keycode is None:
-            raise RuntimeError(f"Calculator keycode mapping yok: {token}")
-        script = f'''
-tell application "Calculator" to activate
-tell application "System Events"
-    key code {keycode}
-end tell
-'''
-        result = _run_osascript(script)
-        if result.returncode != 0:
-            raise RuntimeError(result.stderr.strip() or f"Calculator key code failed: {token}")
-        time.sleep(0.12)
-
+def _focus_calculator() -> bool:
+    try:
+        wins = [w for w in gw.getAllWindows() if "calculator" in w.title.lower() or "hesap makinesi" in w.title.lower()]
+        if wins:
+            win = wins[0]
+            if win.isMinimized:
+                win.restore()
+            win.activate()
+            return True
+        return False
+    except Exception:
+        return False
 
 def _type_calculator_expression(expr: str):
     pyautogui.press("c")
@@ -102,7 +59,6 @@ def _type_calculator_expression(expr: str):
     pyautogui.write(expr, interval=0.05)
     time.sleep(0.1)
     pyautogui.press("enter")
-
 
 async def run_calculator_task(task: str) -> dict:
     expr = extract_expression(task)
@@ -115,13 +71,9 @@ async def run_calculator_task(task: str) -> dict:
 
     await asyncio.sleep(0.8)
 
-    if IS_MAC:
-        subprocess.run(
-            ["osascript", "-e", 'tell application "Calculator" to activate'],
-            capture_output=True,
-            timeout=3,
-        )
-    elif IS_WIN:
+    focused = await asyncio.to_thread(_focus_calculator)
+    if not focused:
+        # Fallback to second open app call
         second_open = await asyncio.to_thread(open_app, "calculator")
         if not second_open.get("ok"):
             return {"ok": False, "error": second_open.get("error", "Calculator odaklanamadı")}
@@ -129,10 +81,7 @@ async def run_calculator_task(task: str) -> dict:
     await asyncio.sleep(0.4)
 
     try:
-        if IS_MAC:
-            await asyncio.to_thread(_press_calculator_keys_macos, expr)
-        else:
-            await asyncio.to_thread(_type_calculator_expression, expr)
+        await asyncio.to_thread(_type_calculator_expression, expr)
     except Exception as exc:
         return {"ok": False, "error": f"hesap makinesi input başarısız: {exc}"}
 

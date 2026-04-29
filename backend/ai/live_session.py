@@ -21,8 +21,9 @@ from tools.browser_agent import run_browser_task, run_takeover_task, launch_debu
 from tools.browser import open_url, search_web, hidden_search
 from tools.calculator import run_calculator_task
 from tools.computer_use import run_computer_task
-from tools.mail import send_mail
+from tools.mail import send_mail, check_mail, switch_mail_account, get_active_mail_account
 from tools.spotify import play_spotify_track
+from tools.league import launch_league_client
 from tools.weather import get_weather
 from tools.advanced_research import deep_research
 from tools.developer import save_report, create_project_file, autonomous_develop
@@ -199,9 +200,63 @@ FUNCTION_DECLARATIONS = [
                 "subject": {"type": "string", "description": "Mail konusu"},
                 "body": {"type": "string", "description": "Mail gövdesi (düz metin)"},
                 "auto_send": {"type": "boolean", "description": "True ise otomatik gönderir, False ise manuel gönderim için açık bırakır."},
+                "account": {"type": "string", "description": "Opsiyonel gönderen Gmail hesabı veya alias: burcuemre, erdemciburakemre, burcu, erdem."},
             },
             "required": ["to", "subject", "body", "auto_send"],
         },
+    },
+    {
+        "name": "check_mail",
+        "description": (
+            "Gmail API ile kullanıcının son maillerini veya arama sorgusuna uyan maillerini kontrol eder. "
+            "Tarayıcı/browser-use/debug profile kullanmaz; Gmail OAuth token'ı ile doğrudan okur. "
+            "Kullanıcı 'maillerimi kontrol et', 'son maillerime bak', 'okunmamış mail var mı', "
+            "'X kişisinden mail gelmiş mi' dediğinde bunu kullan. Sonucu kısa ve net özetle."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Opsiyonel Gmail arama sorgusu. Örn: 'from:ali@example.com newer_than:7d' veya boş string.",
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Kaç mail okunacak. 1-10 arası, varsayılan 5.",
+                },
+                "unread_only": {
+                    "type": "boolean",
+                    "description": "True ise sadece okunmamış mailleri getirir.",
+                },
+                "account": {
+                    "type": "string",
+                    "description": "Opsiyonel Gmail hesabı veya alias: burcuemre, erdemciburakemre, burcu, erdem. Boşsa aktif hesap kullanılır.",
+                },
+            },
+        },
+    },
+    {
+        "name": "switch_mail_account",
+        "description": (
+            "Aktif Gmail hesabını değiştirir. Kullanıcı 'burcuemre'ye geç', "
+            "'erdemciburakemre hesabına geç', 'mail hesabımı değiştir' dediğinde kullan. "
+            "Bu işlemden sonra check_mail ve send_mail varsayılan olarak seçilen hesabı kullanır."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "account": {
+                    "type": "string",
+                    "description": "Geçilecek hesap veya alias: burcuemre, erdemciburakemre, burcu, erdem.",
+                },
+            },
+            "required": ["account"],
+        },
+    },
+    {
+        "name": "get_active_mail_account",
+        "description": "Şu an aktif olan Gmail hesabını ve token hazır mı bilgisini döner.",
+        "parameters": {"type": "object", "properties": {}},
     },
 
     {
@@ -301,6 +356,32 @@ FUNCTION_DECLARATIONS = [
         "parameters": {"type": "object", "properties": {}},
     },
     {
+        "name": "launch_league_client",
+        "description": (
+            "League of Legends / Riot Client'ı Windows'ta açar ve ana LoL client ekranı hazır olana kadar bekler. "
+            "Kullanıcı 'LoL aç', 'League'i hazırla', 'Riot client'a gir', 'LoL hesabıma giriş yap' dediğinde bunu kullan. "
+            "Kullanıcı 'fjkis hesabından gir', 'katilbronzla gir', 'abubakar hesabını aç' derse account alanına ilgili aliası yaz. "
+            "Login gerekiyorsa .env içindeki hesap bazlı Riot kullanıcı adı/şifresiyle giriş yapmayı dener; yoksa login ekranında bırakır."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "account": {
+                    "type": "string",
+                    "description": "Opsiyonel hesap aliası: fjkis, fjkis123, ana, katilbronz, abubakar.",
+                },
+                "auto_login": {
+                    "type": "boolean",
+                    "description": "True ise .env'deki RIOT_USERNAME / RIOT_PASSWORD ile giriş yapmayı dener.",
+                },
+                "timeout_s": {
+                    "type": "integer",
+                    "description": "Client'ın hazır olması için beklenecek süre. Varsayılan 120 saniye.",
+                },
+            },
+        },
+    },
+    {
         "name": "deep_research",
         "description": (
             "Karmaşık, derinlemesine ve karşılaştırmalı internet araştırmaları için Kimi k2.6 modelini kullanır. "
@@ -389,11 +470,25 @@ TOOL_IMPL = {
     "close_app": lambda args: close_app(args.get("name", "")),
     "get_weather": lambda args: get_weather(args.get("location", "")),
     "open_url": lambda args: open_url(args.get("url", "")),
+    "check_mail": lambda args: check_mail(
+        args.get("query", ""),
+        int(args.get("max_results", 5) or 5),
+        bool(args.get("unread_only", False)),
+        args.get("account"),
+    ),
+    "switch_mail_account": lambda args: switch_mail_account(args.get("account", "")),
+    "get_active_mail_account": lambda args: get_active_mail_account(),
+    "launch_league_client": lambda args: launch_league_client(
+        bool(args.get("auto_login", True)),
+        int(args.get("timeout_s", 120) or 120),
+        args.get("account"),
+    ),
     "send_mail": lambda args: send_mail(
         args.get("to", ""),
         args.get("subject", ""),
         args.get("body", ""),
         bool(args.get("auto_send", False)),
+        args.get("account"),
     ),
     "send_whatsapp": lambda args: send_whatsapp(args.get("message", ""), args.get("phone")),
 }
@@ -403,7 +498,7 @@ MODEL_FLASH_LIVE = "gemini-3.1-flash-live-preview"
 
 VISION_MODELS = ("gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3.1-flash-lite-preview")
 SUMMARY_MODELS = ("gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-3.1-flash-lite-preview")
-VOICE_NAME = "Kore"
+VOICE_NAME = "Charon"
 INPUT_SAMPLE_RATE = 16000
 OUTPUT_SAMPLE_RATE = 24000
 INPUT_CHUNK_MS = 32
@@ -506,9 +601,11 @@ class LiveSession:
         send_video: bool = False,
         conversation_memory: list[dict] = None,
         search_cache: list[dict] = None,
+        on_event: Callable[[str], None] | None = None,
     ):
         self.system_prompt = system_prompt
         self.on_log = on_log
+        self.on_event = on_event
         self.should_stop = should_stop
         self.send_video = send_video
         self.conversation_memory = conversation_memory or []
@@ -652,12 +749,12 @@ class LiveSession:
                 
                 # --- Lag Monitoring ---
                 loop_end = time.monotonic()
-                if loop_end - loop_start > 0.05:  # 50ms'den fazla sürerse uyar
-                    print(f"[Jarvan] LAG UYARISI: Transmit loop yavaşladı! ({loop_end - loop_start:.3f}s)")
-
-                await session.send_realtime_input(
+                
+                # Sesi gönderirken mic döngüsünü (PyAudio buffer) bloklamamak için asenkron task kullanıyoruz
+                # Böylece ses girişinde veya çıkışında takılma (kayma) engellenir.
+                asyncio.create_task(session.send_realtime_input(
                     audio=types.Blob(data=data, mime_type=f"audio/pcm;rate={INPUT_SAMPLE_RATE}")
-                )
+                ))
         except asyncio.CancelledError:
             pass
         except Exception as e:
@@ -893,6 +990,23 @@ class LiveSession:
                         result = {"ok": True, "result": f"Calculator'da {raw.get('expression')} işlendi, sonuç: {raw.get('result')}"}
                     else:
                         result = {"ok": False, "error": raw.get("error", "hesap makinesi görevi başarısız")}
+                except Exception as e:
+                    result = {"ok": False, "error": str(e)}
+                self.on_log("system", f"[tool sonuç] {result}", None)
+            elif name == "launch_league_client":
+                account = args.get("account")
+                auto_login = bool(args.get("auto_login", True))
+                timeout_s = int(args.get("timeout_s", 120) or 120)
+                self.on_log("system", f"[tool] launch_league_client(account={account})", None)
+                try:
+                    if self.on_event:
+                        self.on_event("window_hide")
+                    result = await asyncio.to_thread(
+                        launch_league_client,
+                        auto_login,
+                        timeout_s,
+                        account,
+                    )
                 except Exception as e:
                     result = {"ok": False, "error": str(e)}
                 self.on_log("system", f"[tool sonuç] {result}", None)

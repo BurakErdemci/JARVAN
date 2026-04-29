@@ -21,6 +21,7 @@ backend/contacts.json
 backend/contacts_phones.json
 backend/credentials.json
 backend/token.json
+backend/token_*.json
 
 # OS
 .DS_Store

@@ -1,8 +1,8 @@
 import os
 from ai.obsidian_manager import ObsidianManager
 
-# Varsayılan Vault yolu (JarvanVault içindeki JARVAN klasörü)
-DEFAULT_VAULT_PATH = "/Users/burakemreerdemci/Documents/JarvanVault/JARVAN"
+# Varsayılan Vault yolu (Kullanıcının Documents dizinindeki JarvanVault/JARVAN klasörü)
+DEFAULT_VAULT_PATH = os.path.expanduser("~/Documents/JarvanVault/JARVAN")
 
 # Singleton instance
 _manager = None

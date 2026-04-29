@@ -42,3 +42,9 @@ google-api-python-client>=2.120.0
 # Tools - WhatsApp & Browser
 pyautogui>=0.9.54
 duckduckgo_search>=5.0.0
+ddgs>=9.0.0
+
+# Missing/Undeclared Dependencies
+vosk>=0.3.45
+PyYAML>=6.0.1
+httpx>=0.28.1

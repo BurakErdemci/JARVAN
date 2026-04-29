@@ -33,8 +33,8 @@ TASK_TIMEOUT_S = 300          # 5 dakika
 SCREENSHOT_SIZE = (1280, 720) # Vision modele gönderilecek thumbnail boyutu
 ACTION_DELAY_S = 1.5          # Aksiyon sonrası UI tepkisi için bekleme
 
-IS_MAC = platform.system() == "Darwin"
 IS_WIN = platform.system() == "Windows"
+IS_MAC = platform.system() == "Darwin"
 
 # Vision model fallback zinciri (live_session.py ile aynı)
 VISION_MODELS = (
@@ -130,49 +130,22 @@ def _validate_action(action: dict, thumb_size: tuple[int, int]) -> str | None:
 # ─── Clipboard paste (Türkçe karakter desteği) ───────────────────────
 
 def _clipboard_paste(text: str):
-    """Metni clipboard'a kopyalayıp Ctrl/Cmd+V ile yapıştır.
-
-    pyautogui.write() Türkçe karakterlerle (ş, ğ, ü, ç, ö, ı) sorun
-    çıkarıyor — platform-native clipboard kullanmak daha güvenilir.
-    """
-    if IS_MAC:
-        process = subprocess.Popen(["pbcopy"], stdin=subprocess.PIPE)
-        process.communicate(text.encode("utf-8"))
-        time.sleep(0.1)
-        pyautogui.hotkey("command", "v")
-    elif IS_WIN:
-        # PowerShell ile clipboard'a yaz (unicode destekli)
-        escaped = text.replace("'", "''")
-        subprocess.run(
-            ["powershell", "-command", f"Set-Clipboard -Value '{escaped}'"],
-            capture_output=True, timeout=5,
-        )
-        time.sleep(0.1)
-        pyautogui.hotkey("ctrl", "v")
-    else:
-        # Linux — xclip
-        try:
-            process = subprocess.Popen(
-                ["xclip", "-selection", "clipboard"], stdin=subprocess.PIPE,
-            )
-            process.communicate(text.encode("utf-8"))
-            time.sleep(0.1)
-            pyautogui.hotkey("ctrl", "v")
-        except FileNotFoundError:
-            pyautogui.write(text, interval=0.05)
+    """Metni clipboard'a kopyalayıp Ctrl+V ile yapıştır. (Windows PowerShell optimize)"""
+    escaped = text.replace("'", "''")
+    subprocess.run(
+        ["powershell", "-command", f"Set-Clipboard -Value '{escaped}'"],
+        capture_output=True, timeout=5,
+    )
+    time.sleep(0.1)
+    pyautogui.hotkey("ctrl", "v")
     time.sleep(0.2)
 
 
 # ─── Hotkey normalizasyonu ────────────────────────────────────────────
 
 def _normalize_hotkey(keys: str) -> list[str]:
-    """Platform-aware hotkey normalizasyonu.
-    Model 'ctrl+c' derse Mac'te 'command+c' olur.
-    'alt' → Mac'te 'option' olarak kalır (pyautogui 'option' tanıyor)."""
-    parts = [k.strip().lower() for k in keys.split("+")]
-    if IS_MAC:
-        parts = ["command" if p == "ctrl" else p for p in parts]
-    return parts
+    """Platform-aware hotkey normalizasyonu."""
+    return [k.strip().lower() for k in keys.split("+")]
 
 
 # ─── Aksiyon yürütücü ────────────────────────────────────────────────

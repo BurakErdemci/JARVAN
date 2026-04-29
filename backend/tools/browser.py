@@ -1,6 +1,5 @@
-"""Tarayıcıda URL açma — Gizli sekmeli cross-platform destekli."""
+"""Tarayıcıda URL açma — Gizli sekmeli Windows optimize."""
 import os
-import platform
 import subprocess
 import sys
 import urllib.parse
@@ -8,10 +7,6 @@ import webbrowser
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import TAVILY_API_KEY
-
-IS_WIN = platform.system() == "Windows"
-IS_MAC = platform.system() == "Darwin"
-
 
 def _find_opera_gx_win() -> str | None:
     local = os.environ.get("LOCALAPPDATA", "")
@@ -24,7 +19,6 @@ def _find_opera_gx_win() -> str | None:
             return path
     return None
 
-
 def open_url(url: str, incognito: bool = False) -> dict:
     target = (url or "").strip()
     if not target:
@@ -35,17 +29,12 @@ def open_url(url: str, incognito: bool = False) -> dict:
 
     try:
         if incognito:
-            if IS_WIN:
-                exe = _find_opera_gx_win()
-                if exe:
-                    subprocess.Popen([exe, "--private", target])
-                else:
-                    # Opera GX yok — Edge InPrivate ile fallback
-                    subprocess.Popen(["cmd", "/c", "start", "msedge", "--inprivate", target], shell=False)
-            elif IS_MAC:
-                subprocess.Popen(["open", "-n", "-a", "Opera GX", "--args", "--private", target])
+            exe = _find_opera_gx_win()
+            if exe:
+                subprocess.Popen([exe, "--private", target])
             else:
-                 subprocess.Popen(["opera", "--private", target])
+                # Opera GX yok — Edge InPrivate ile fallback
+                subprocess.Popen(["cmd", "/c", "start", "msedge", "--inprivate", target], shell=False)
             return {"ok": True, "url": target, "incognito": True}
         else:
             opened = webbrowser.open(target, new=2)
@@ -105,7 +94,10 @@ def _ddgs_search(query: str, max_results: int = 3) -> dict:
         import warnings
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            from ddgs import DDGS
+            try:
+                from ddgs import DDGS
+            except ImportError:
+                from duckduckgo_search import DDGS
             with DDGS() as ddgs:
                 results = list(ddgs.text(query, max_results=max_results))
                 for r in results:
