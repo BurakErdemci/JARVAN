@@ -4,6 +4,10 @@ import os
 # Child process'lere miras kalması için import'lardan önce set et
 os.environ["PYTHONIOENCODING"] = "utf-8"
 
+# ChromaDB gRPC fork loglarını sustur
+os.environ["GRPC_VERBOSITY"] = "ERROR"
+os.environ["GRPC_TRACE"] = ""
+
 # Windows cp1252 → emoji/unicode logları kırar; UTF-8'e zorla
 if sys.stdout and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -48,7 +52,6 @@ class Pipeline:
         self.live_enabled = True
         self.proactive_enabled = False
         self.conversation_memory: list[dict] = []
-        self.search_cache: list[dict] = []
 
     def emit(self, type: str, **data):
         self.q.put(PipelineEvent(type, **data))
@@ -79,17 +82,6 @@ class Pipeline:
         self.running = False
         self.emit("status", running=False, live=self.live_enabled, proactive=self.proactive_enabled)
 
-    def set_live(self, enabled: bool):
-        if self.live_enabled == enabled:
-            return
-        self.live_enabled = enabled
-        if self.running:
-            self.emit("log", level="system", text=f"Live {'açılıyor' if enabled else 'kapatılıyor'}, yeniden başlatılıyor...")
-            self.stop()
-            self.start()
-        else:
-            self.emit("status", running=self.running, live=enabled, proactive=self.proactive_enabled)
-            self.emit("log", level="system", text=f"Live {'açık' if enabled else 'kapalı'}")
 
     def set_proactive(self, enabled: bool):
         if self.proactive_enabled == enabled:
@@ -102,6 +94,17 @@ class Pipeline:
         else:
             self.emit("status", running=self.running, live=self.live_enabled, proactive=enabled)
             self.emit("log", level="system", text=f"Proaktif yorum {'açık' if enabled else 'kapalı'}")
+
+    def set_live(self, enabled: bool):
+        if self.live_enabled == enabled:
+            return
+        self.live_enabled = enabled
+        if self.running:
+            self.emit("log", level="system", text=f"Live {'açılıyor' if enabled else 'kapatılıyor'}, pipeline yeniden başlatılıyor...")
+            self.stop()
+            if enabled:
+                self.start()
+        self.emit("status", running=self.running, live=self.live_enabled, proactive=self.proactive_enabled)
 
     def _emit_log(self, level: str, text: str, provider: str | None = None):
         if level in ("user", "jarvan"):
@@ -119,7 +122,7 @@ class Pipeline:
         if self.live_enabled:
             self._run_live()
         else:
-            self._run_vad()
+            self.emit("log", level="system", text="Live kapalı. Pipeline başlatılmadı.")
 
     def _run_live(self):
         import asyncio
@@ -139,7 +142,6 @@ class Pipeline:
                     should_stop=self.stop_flag.is_set,
                     send_video=self.proactive_enabled,
                     conversation_memory=self.conversation_memory,
-                    search_cache=self.search_cache,
                 )
 
                 start_ts = time.monotonic()
@@ -165,76 +167,6 @@ class Pipeline:
         finally:
             self.emit("log", level="system", text="Live oturum kapandı.")
 
-    def _run_vad(self):
-        import pyaudio
-        from audio.vad_gate import VADGate
-        from audio.transcriber import Transcriber
-        from screen.capture import capture_screenshot_pil
-        from ai.router import route
-        from tts.speaker import speak
-
-        try:
-            self.emit("log", level="system", text="Whisper yükleniyor...")
-            transcriber = Transcriber()
-            gate = VADGate()
-            self.emit("log", level="system", text="VAD hazır.")
-
-            p = pyaudio.PyAudio()
-            stream = p.open(
-                format=pyaudio.paInt16,
-                channels=AUDIO_CHANNELS,
-                rate=AUDIO_SAMPLE_RATE,
-                input=True,
-                frames_per_buffer=CHUNK,
-            )
-            self.emit("log", level="system", text="Dinleme başladı.")
-
-            buffer = []
-            last_mode = None
-
-            try:
-                while not self.stop_flag.is_set():
-                    data = stream.read(CHUNK, exception_on_overflow=False)
-                    result = gate.process_chunk(data)
-
-                    if result in ("SPEECH", "HANGOVER"):
-                        buffer.append(data)
-
-                    mode_name, _ = get_active_mode()
-                    if mode_name != last_mode:
-                        last_mode = mode_name
-                        self.emit("mode", name=mode_name)
-
-                    if result == "FINALIZE" and buffer:
-                        audio_bytes = b"".join(buffer)
-                        buffer = []
-                        gate.reset()
-
-                        transcript = transcriber.transcribe(audio_bytes)
-                        if not transcript:
-                            self.emit("log", level="system", text="(ses anlaşılamadı)")
-                            continue
-
-                        self.emit("log", level="user", text=transcript)
-
-                        screenshot = capture_screenshot_pil()
-                        provider, response = route(transcript, screenshot)
-                        self.emit("log", level="jarvan", text=response, provider=provider)
-
-                        try:
-                            speak(response)
-                        except Exception as e:
-                            self.emit("log", level="error", text=f"TTS hatası: {e}")
-
-            finally:
-                stream.stop_stream()
-                stream.close()
-                p.terminate()
-
-        except Exception as e:
-            self.emit("log", level="error", text=f"Pipeline hatası: {e}")
-        finally:
-            self.emit("log", level="system", text="Dinleme durdu.")
 
 
 class ConnectionManager:
@@ -319,10 +251,10 @@ async def ws_endpoint(ws: WebSocket):
                 pipeline.start()
             elif t == "stop":
                 pipeline.stop()
-            elif t == "toggle_live":
-                pipeline.set_live(bool(msg.get("enabled")))
             elif t == "toggle_proactive":
                 pipeline.set_proactive(bool(msg.get("enabled")))
+            elif t == "toggle_live":
+                pipeline.set_live(bool(msg.get("enabled")))
             else:
                 await ws.send_json({"type": "log", "level": "error", "text": f"Bilinmeyen komut: {t}"})
     except WebSocketDisconnect:

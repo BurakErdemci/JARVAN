@@ -29,8 +29,16 @@ uvicorn==0.34.0
 websockets==14.2
 python-dotenv==1.1.0
 
-# Tools - browser agent (otonom tarayıcı)
-browser-use>=0.1.40
+# Memory / MCP
+chromadb>=0.5.0
+fastmcp>=2.0.0
+mcp>=1.0.0
+
+# Tools - browser (Playwright MCP)
+playwright>=1.49.0
+
+# Tools - Spotify API
+spotipy>=2.23.0
 
 # Tools - weather (HTTP)
 requests>=2.31.0

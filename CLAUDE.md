@@ -1,559 +1,490 @@
-# Jarvan — AI Kişisel Asistan
-
-**Ekranını gören, sesini duyan, konuşan ve bilgisayarını kontrol eden kişisel AI asistan.**
-
-Sahibi ve geliştirici: Burak Emre Erdemci · Windows (32GB RAM, RX 6750 XT 12GB, Ryzen 5 7500F)  
-Mac'te de çalışıyor (geliştirme ortamı), asıl hedef platform Windows.
+# JARVAN — Master Blueprint v2.0
+# Sahibi: Burak Emre Erdemci
+# Son güncelleme: Mayıs 2026
 
 ---
 
-## Güncel Durum (2026-04-19)
+## 🧠 Felsefe
 
-### Tamamlanan (Production)
+Jarvan bir chatbot değildir. Seni tanıyan, ekranını gören, sesini duyan, bilgisayarını kontrol eden ve sürekli öğrenen bir **Dijital İkiz**dir. Hedef: Tony Stark'ın JARVIS'i — reaktif değil, proaktif; komut beklemez, fark eder ve söyler.
 
-- ✅ **Gemini Live native audio** — `gemini-3.1-flash-live-preview` ile gerçek zamanlı ses dialog
-- ✅ **Tool sistemi** (13 araç): app aç/kapat, hava durumu, web arama, URL aç, Gmail, WhatsApp, ekran görme, browser ajan, computer use
-- ✅ **Proaktif mod** — `send_video=True` ile 1 FPS ekran stream, Gemini Live ekranı sürekli izliyor
-- ✅ **Conversation memory** — Session resetlendiğinde son 20 mesaj system prompt'a inject ediliyor
-- ✅ **Mod sistemi** — Aktif pencereye göre system prompt değişiyor (Unreal / Unity / Code / Default)
-- ✅ **Search pipeline** — Tavily → DDGS fallback → Flash Lite özetleme → Live'a temiz metin
-- ✅ **Browser agent** — browser-use 0.5.x, Opera GX, CDP takeover, process-level task lock
-- ✅ **Mail** — Gmail OAuth API (auto_send=true: direkt gönderir, false: compose URL açar)
-- ✅ **WhatsApp** — URL scheme + pyautogui Enter (platform fark etmeksizin)
-- ✅ **Electron UI** — Ses aç/kapat, live mod, proaktif mod toggle, mod göstergesi, log ekranı
-- ✅ **VAD pipeline** — Silero VAD (legacy mod, Live mod kullanılmıyor)
-- ✅ **Windows UTF-8 fix** — stdout/stderr reconfigure, PYTHONIOENCODING=utf-8
-- ✅ **Computer use** — pyautogui + Gemini Vision otonom agent loop, ekranı görüp mouse/keyboard ile herhangi uygulamayı kontrol
-
-### Açık Sorunlar
-
-- ⚠️ **VAD modu (legacy)**: Live kapalıyken aktif olan Whisper+VAD pipeline'ı maintenance modunda; ağırlıklı kullanım Live üzerinden.
-
-### Planlanan
-
-- ⏳ Ayarlar ekranı (VAD threshold, ses, dil)
-- ⏳ Production build (PyInstaller + electron-builder)
-- ⏳ Gemini function calling ajanı (v0.5) — araç çağrısını JSON olarak döndür, metin üretme
+**Temel kararlar:**
+- **Neden Gemini?** Live API ~200ms gecikme, cömert ücretsiz limit, Google aboneliğiyle CLI bedava, multimodal lider.
+- **Neden local model yok?** Test edildi, istenen kalite seviyesine ulaşılamadı. Cloud-first yapı bu projenin doğru seçimi.
+- **Neden MCP?** Tüm araçları standart interface'e çekmek için. Bir tool FastMCP'ye yazılırsa hem Gemini CLI hem Live hem başka herhangi bir agent kullanabilir.
+- **Neden Voicebox?** TTS + STT + ses klonlama + MCP server — hepsini tek local uygulamada çözüyor, veri dışarı çıkmıyor.
 
 ---
 
-## Mimari
+## 🏛️ Mimari (v2.0 — Gemini-Centric + MCP Hub)
 
 ```
-Kullanıcı (ses)
-      ↓
-PyAudio mikrofon akışı (16kHz mono PCM)
-      ↓
-LiveSession._mic_loop() — ekoya karşı cooldown (0.8s)
-      ↓
-Gemini Live WebSocket (gemini-3.1-flash-live-preview)
-      ↓                          ↑
-  ses yanıtı (PCM 24kHz)    tool_call gelirse → _handle_tool_calls()
-      ↓
-PyAudio output stream
+┌─────────────────────────────────────────────────────┐
+│                   KULLANICI                         │
+│              (ses / ekran / Telegram)               │
+└──────────────────────┬──────────────────────────────┘
+                       │
+┌──────────────────────▼──────────────────────────────┐
+│              VOSK — Wake Word                       │
+│         Offline, 7/24, "Uyan" algılama              │
+└──────────────────────┬──────────────────────────────┘
+                       │ uyanma sinyali
+┌──────────────────────▼──────────────────────────────┐
+│           FASTAPI BACKEND — Kalıcı Beyin            │
+│                                                     │
+│  memory.json ←→ ChromaDB (RAG + behavioral memory) │
+│  Platform-aware config (Mac / Windows)              │
+│  WebSocket /ws → Electron frontend                  │
+└──────┬───────────────┬──────────────────────────────┘
+       │               │ memory inject (her session)
+       │    ┌──────────▼──────────────────────────┐
+       │    │     GEMINI LIVE — Orchestrator       │
+       │    │  gemini-3.1-flash-live-preview       │
+       │    │  Ses (~200ms) + Ekran (1 FPS JPEG)   │
+       │    │  tool_call → _handle_tool_calls()    │
+       │    └──┬─────────┬──────────┬─────────────┘
+       │       │         │          │
+       │   ┌───▼──┐  ┌───▼───┐  ┌──▼──────────┐
+       │   │Gemini│  │DeepS. │  │  Kimi K2.6  │
+       │   │ CLI  │  │  V4   │  │(deep_resrch)│
+       │   │(dev) │  │(fast) │  │via OpenRouter│
+       │   └───┬──┘  └───┬───┘  └──┬──────────┘
+       │       │          │         │
+       └───────▼──────────▼─────────▼────────────────┐
+                      MCP HUB (FastMCP)               │
+         ┌──────────┬──────────┬──────────┬────────┐  │
+         │Obsidian  │ Gmail    │ Browser  │Voicebox│  │
+         │  MCP     │  MCP     │  MCP     │  MCP   │  │
+         │(STDIO)   │(OAuth)   │(CDP+PW)  │/speak  │  │
+         └──────────┴──────────┴──────────┴────────┘  │
+                                                       │
+         ┌──────────┬──────────┐                       │
+         │Spotify   │ PC Use   │                       │
+         │  MCP     │  MCP     │                       │
+         │(pyauto)  │(Vision)  │                       │
+         └──────────┴──────────┘                       │
 ```
 
-**Proaktif mod aktifse:**
-```
-LiveSession._video_loop() — 1 FPS, 720x720 JPEG → Gemini Live WebSocket
+**Kritik kural:** Hafıza FastAPI backend'de yaşar. Gemini CLI veya Live session bittiğinde hafıza ölmez. Her yeni session başında ChromaDB + memory.json backend'den inject edilir.
+
+---
+
+## 🤖 Model Routing — Hangi İş Hangi Model
+
+| Görev | Model | Neden |
+|-------|-------|-------|
+| Sesli diyalog (orchestrator) | `gemini-3.1-flash-live` | ~200ms, En güncel LiveAPI, multimodal |
+| Ekran analizi (vision) | `gemini-3.1-pro` | Multimodal lider, derin görsel zeka |
+| Kod geliştirme / dosya yazma | Gemini CLI (`gemini-3.1-pro`) | 2M+ context, agentic, kodlama canavarı |
+| Derin araştırma | Kimi K2.6 via OpenRouter | En derin web tarama ve reasoning |
+| **Otonom İçgörü (Insight Agent)** | `gemini-3.1-flash-lite-preview` | **Hızlı, yüksek kota, otonom süzgeç** |
+| Hızlı araç çağrıları | `gemini-3.1-flash-lite-preview` | Milisaniyelik karar verme |
+| Hafıza embedding | `gemini-embedding-2` | Yeni nesil vektörleme, multimodal uyumlu |
+| Mimari ve Stratejik Analiz | Claude Opus 4.6 | SWE-bench %74+, uzun analiz |
+| Ses çıkışı (TTS) | Voicebox — Chatterbox Turbo | Local, Türkçe, ses klonlama |
+| Ses girişi (STT) | Voicebox — Whisper Turbo | Local, hızlı, Türkçe |
+| Wake word | Vosk (local, offline) | 7/24, sıfır gecikme, bedava |
+
+**DeepSeek V4 nerede kullanılır:** Mail özetleme, basit tool kararları, sürekli arka planda dönen düşük öncelikli işler. Kimi K2.6 ile karıştırma — Kimi yalnızca `deep_research` için.
+
+---
+
+## 🛠️ MCP Sunucuları (FastMCP ile yazılır)
+
+Her tool bir MCP server'a çevrilir. `~/.gemini/settings.json`'a eklenir, Gemini CLI otomatik keşfeder.
+
+```python
+# Örnek: Obsidian MCP
+from fastmcp import FastMCP
+
+mcp = FastMCP("obsidian")
+
+@mcp.tool()
+def obsidian_create(title: str, content: str, folder: str = "") -> str:
+    """Obsidian vault'ta yeni not oluşturur"""
+    ...
+
+@mcp.tool()
+def obsidian_search(query: str) -> list[dict]:
+    """Vault'ta semantik arama yapar"""
+    ...
 ```
 
-**Live modu kapalıysa (legacy):**
-```
-Mikrofon → VADGate (Silero) → faster-whisper → router.py → Gemini Flash/Lite → Edge TTS
+### MCP Sunucu Listesi
+
+| Sunucu | Transport | Araçlar |
+|--------|-----------|---------|
+| `obsidian-mcp` | STDIO | create, read, search, list, link |
+| `gmail-mcp` | SSE (OAuth) | send, read, list, search |
+| `browser-mcp` | STDIO (CDP) | navigate, click, type, extract, screenshot |
+| `voicebox-mcp` | HTTP `/mcp` | speak, transcribe, list_profiles |
+| `spotify-mcp` | STDIO | play, pause, search, playlist |
+| `computer-mcp` | STDIO | screenshot, click, type, scroll |
+| `memory-mcp` | STDIO | save_insight, query, forget |
+| `calendar-mcp` | SSE (OAuth) | list_events, create_event, update |
+
+### Gemini CLI settings.json şablonu
+
+```json
+{
+  "mcpServers": {
+    "obsidian": {
+      "command": "python",
+      "args": ["/path/to/jarvan/backend/mcp/obsidian_server.py"],
+      "trust": false
+    },
+    "voicebox": {
+      "url": "http://127.0.0.1:17493/mcp",
+      "headers": { "X-Voicebox-Client-Id": "jarvan" }
+    },
+    "gmail": {
+      "url": "http://localhost:8001/mcp"
+    }
+  }
+}
 ```
 
 ---
 
-## Dosya Yapısı
+## 🔊 Ses Katmanı (Voicebox Entegrasyonu)
+
+Voicebox (`github.com/jamiepine/voicebox`) — local-first, MIT lisans, 23k star.
+
+**Kurulum:**
+```bash
+# Windows MSI veya macOS DMG indir
+# voicebox.sh/download
+```
+
+**Jarvan entegrasyonu:**
+```python
+# backend/tools/voice.py
+import httpx
+
+VOICEBOX_URL = "http://127.0.0.1:17493"
+
+async def speak(text: str, profile: str = "jarvan") -> None:
+    """Metni JARVAN sesiyle çalar"""
+    async with httpx.AsyncClient() as client:
+        await client.post(f"{VOICEBOX_URL}/speak", json={
+            "text": text,
+            "profile": profile
+        })
+
+async def transcribe(audio_path: str) -> str:
+    """Ses dosyasını metne çevirir"""
+    async with httpx.AsyncClient() as client:
+        with open(audio_path, "rb") as f:
+            r = await client.post(
+                f"{VOICEBOX_URL}/transcribe",
+                files={"audio": f},
+                data={"model": "whisper-turbo"}
+            )
+        return r.json()["text"]
+```
+
+**Ses klonlama:** Voicebox'ta "jarvan" profili oluştur, 10-30 sn referans ses yükle. Chatterbox Turbo engine seç — `[laugh]` `[sigh]` `[hmm]` gibi tag'leri anlıyor, karakteri daha canlı yapıyor.
+
+---
+
+## 🧬 Hafıza Sistemi (Kalıcı Kişiselleştirme)
+
+Bu Jarvan'ın gerçek JARVIS'e en çok yaklaştığı yer. İki katmanlı:
+
+### Katman 1: memory.json (yapısal)
+```json
+{
+  "user": {
+    "name": "Burak",
+    "music": {
+      "mood_map": {
+        "odaklanma": ["Radiohead", "NieR OST", "Persona OST"],
+        "enerji": ["Gripin", "Manga", "Linkin Park"],
+        "rahatlama": ["Teoman", "Pink Floyd"]
+      }
+    },
+    "work_patterns": {
+      "peak_hours": ["14:00-18:00", "22:00-02:00"],
+      "low_energy": ["09:00-11:00"]
+    },
+    "active_projects": [],
+    "preferences": {}
+  }
+}
+```
+
+### Katman 2: ChromaDB (behavioral RAG)
+```python
+# backend/ai/memory_core.py
+import chromadb
+from chromadb.utils import embedding_functions
+
+class MemoryCore:
+    def __init__(self):
+        self.client = chromadb.PersistentClient(path="./data/chroma")
+        self.ef = embedding_functions.GoogleGenerativeAiEmbeddingFunction(
+            api_key=GEMINI_API_KEY,
+            model_name="models/text-embedding-004"
+        )
+        self.collection = self.client.get_or_create_collection(
+            "jarvan_memory",
+            embedding_function=self.ef
+        )
+
+    def save_insight(self, text: str, metadata: dict) -> None:
+        """Konuşmadan insight üretip kaydet"""
+        self.collection.add(
+            documents=[text],
+            metadatas=[metadata],
+            ids=[f"insight_{datetime.now().timestamp()}"]
+        )
+
+    def query(self, context: str, n: int = 5) -> list[str]:
+        """Bağlama göre ilgili hafızaları getir"""
+        results = self.collection.query(
+            query_texts=[context],
+            n_results=n
+        )
+        return results["documents"][0]
+
+    def build_session_context(self) -> str:
+        """Her session başında inject edilecek hafıza özetini üret"""
+        recent = self.query("genel kullanıcı profili ve alışkanlıklar", n=10)
+        return "\n".join(recent)
+```
+
+### Insight Üretici Ajan
+Her konuşma sonunda arka planda çalışır, behavioral pattern öğrenir:
+```python
+async def extract_insights(conversation: list[dict]) -> None:
+    """Konuşmadan öğrenilecek şeyleri ChromaDB'ye yaz"""
+    prompt = f"""
+    Bu konuşmadan kullanıcı hakkında kalıcı öğrenilecek bir şey var mı?
+    Varsa tek cümleyle yaz. Yoksa boş döndür.
+    Konuşma: {conversation[-5:]}
+    """
+    insight = await gemini_flash.generate(prompt)
+    if insight.strip():
+        memory_core.save_insight(insight, {
+            "timestamp": datetime.now().isoformat(),
+            "type": "behavioral"
+        })
+```
+
+---
+
+## 👁️ Proaktif Davranış (Anomaly Detection)
+
+Jarvan senden komut beklemez. Şu kurallarla proaktif davranır:
+
+```python
+# backend/ai/proactive.py
+
+PROACTIVE_RULES = [
+    {
+        "id": "stuck_on_error",
+        "condition": "ekranda aynı hata mesajı 10+ dakikadır görünüyor",
+        "action": "Burak, {error}'da takılı kaldın. Yardım edeyim mi?",
+        "cooldown_minutes": 15
+    },
+    {
+        "id": "deadline_reminder", 
+        "condition": "takvimde yakın deadline var ve proje dosyaları açık",
+        "action": "Yarın deadline var, {project} ne durumda?",
+        "cooldown_minutes": 120
+    },
+    {
+        "id": "music_context",
+        "condition": "çalışma başladı, müzik yok",
+        "action": "Müzik açayım mı? Son çalıştığın proje için Radiohead vardı.",
+        "cooldown_minutes": 60
+    },
+    {
+        "id": "long_session",
+        "condition": "3 saattir mola yok",
+        "action": "3 saattir duraksız çalışıyorsun.",
+        "cooldown_minutes": 180
+    }
+]
+
+class ProactiveEngine:
+    def __init__(self):
+        self.last_triggered = {}  # rule_id -> timestamp
+
+    async def check(self, screen_context: str, memory: dict) -> str | None:
+        """Her dakika çağrılır, tetiklenecek kural varsa döndürür"""
+        for rule in PROACTIVE_RULES:
+            if self._is_on_cooldown(rule["id"]):
+                continue
+            triggered = await self._evaluate(rule["condition"], screen_context, memory)
+            if triggered:
+                self.last_triggered[rule["id"]] = datetime.now()
+                return rule["action"]
+        return None
+```
+
+---
+
+## 🧬 Gemini CLI Entegrasyonu
+
+CLI ana beyin değil — **güçlü bir dev aracı**. Hafıza FastAPI'de yaşar, CLI subprocess olarak spawn edilir.
+
+```python
+# backend/tools/developer.py
+import asyncio
+import json
+
+async def gemini_cli_task(prompt: str, context_files: list[str] = []) -> str:
+    """
+    Gemini CLI'yi subprocess olarak çalıştır.
+    1M context sayesinde tüm proje dosyalarını okuyabilir.
+    """
+    # Memory'den session context oluştur
+    memory_ctx = memory_core.build_session_context()
+    
+    full_prompt = f"""
+    Kullanıcı profili:
+    {memory_ctx}
+    
+    Görev:
+    {prompt}
+    """
+    
+    cmd = ["gemini", "--model", "gemini-2.5-pro", "--yolo"]
+    
+    # Context dosyalarını @ syntax ile ekle
+    for f in context_files:
+        full_prompt += f"\n@{f}"
+    
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    
+    stdout, stderr = await proc.communicate(full_prompt.encode())
+    return stdout.decode()
+```
+
+**CLI ne zaman çağrılır:**
+- `crazy_mode` / multi-agent dev pipeline
+- Büyük refactor işleri (tüm codebase context gerektirir)
+- Git commit + PR açma
+- Yeni dosya/modül yaratma
+
+**CLI ne zaman çağrılmaz:**
+- Real-time ses diyaloğu (Gemini Live halleder)
+- Hızlı araç çağrıları (DeepSeek V4)
+- Araştırma (Kimi K2.6)
+
+---
+
+## 📁 Dosya Yapısı (Hedef v2.0)
 
 ```
 jarvan/
-├── CLAUDE.md                          # Bu dosya
+├── CLAUDE.md                    # Bu dosya
 ├── backend/
-│   ├── main.py                        # FastAPI + WebSocket server, Pipeline yönetimi
-│   ├── config.py                      # Tüm sabitler, .env yükleme
-│   ├── contacts.json                  # İsim → email rehberi
-│   ├── contacts_phones.json           # İsim → telefon rehberi
-│   ├── credentials.json               # Gmail OAuth client secret (gitignore'da)
-│   ├── token.json                     # Gmail OAuth token (gitignore'da)
-│   ├── requirements.txt
+│   ├── main.py                  # FastAPI + WebSocket
+│   ├── config.py                # Platform-aware (Mac/Win)
 │   ├── ai/
-│   │   ├── assistant.py               # Legacy: Gemini Flash/Lite tek çağrı (VAD modu için)
-│   │   ├── live_session.py            # Gemini Live — asıl AI motoru, tüm tool'lar burada
-│   │   └── router.py                  # Legacy: Teknik/sohbet intent router (VAD modu için)
-│   ├── audio/
-│   │   ├── vad_gate.py                # Silero VAD — SILENCE/SPEECH/HANGOVER/FINALIZE state machine
-│   │   └── transcriber.py             # faster-whisper (small, int8, Türkçe)
-│   ├── screen/
-│   │   └── capture.py                 # mss ekran yakala → PIL Image veya base64 JPEG
-│   ├── tts/
-│   │   └── speaker.py                 # Edge TTS (tr-TR-EmelNeural) — legacy VAD modu için
-│   ├── modes/
-│   │   ├── detector.py                # pygetwindow → aktif pencere → mod adı
-│   │   └── prompts.py                 # UNREAL/UNITY/CODE/DEFAULT system prompt metinleri
-│   └── tools/
-│       ├── app_control.py             # open_app, close_app — cross-platform alias tablosu
-│       ├── browser.py                 # open_url, search_web (Google), hidden_search (Tavily→DDGS)
-│       ├── browser_agent.py           # browser-use ajan — otonom tarayıcı görevi
-│       ├── computer_use.py            # Otonom PC kontrolü — pyautogui + Gemini Vision agent loop
-│       ├── contacts.py                # contacts.json / contacts_phones.json lookup
-│       ├── mail.py                    # Gmail OAuth gönderim + compose URL fallback
-│       ├── weather.py                 # Hava durumu (requests tabanlı)
-│       └── whatsapp.py                # whatsapp:// URL scheme + pyautogui Enter
-├── frontend/
-│   ├── electron/
-│   │   ├── main.ts                    # Electron ana process — backend spawn, IPC
-│   │   └── preload.ts                 # IPC köprüsü (contextBridge)
-│   └── src/
-│       ├── App.tsx                    # Ana UI bileşeni
-│       ├── types.ts                   # WebSocket mesaj tipleri
-│       ├── hooks/                     # useWebSocket vb.
-│       └── components/                # UI parçaları
+│   │   ├── live_session.py      # Gemini Live orchestrator
+│   │   ├── memory_core.py       # ChromaDB RAG + memory.json
+│   │   ├── proactive.py         # Anomaly detection + kurallar
+│   │   ├── insight_agent.py     # Konuşmadan öğrenme
+│   │   ├── wake_word.py         # Vosk
+│   │   └── obsidian_manager.py  # Nöral ağ
+│   ├── mcp/                     # FastMCP server'lar
+│   │   ├── obsidian_server.py
+│   │   ├── gmail_server.py
+│   │   ├── browser_server.py
+│   │   ├── spotify_server.py
+│   │   ├── computer_server.py
+│   │   └── memory_server.py
+│   ├── tools/                   # Mevcut araçlar (wrapper)
+│   │   ├── mail.py
+│   │   ├── computer_use.py
+│   │   ├── developer.py         # Gemini CLI subprocess
+│   │   ├── voice.py             # Voicebox HTTP client
+│   │   └── obsidian.py
+│   └── data/
+│       ├── memory.json
+│       └── chroma/              # ChromaDB persistent
+├── frontend/                    # Electron + React
+└── .gemini/
+    └── settings.json            # MCP server config
 ```
 
 ---
 
-## Modüller — Detaylı
+## ✅ Kesinlikle Olması Gereken Özellikler
 
-### `backend/main.py`
+### 1. Kalıcı Kişilik Hafızası (ChromaDB RAG)
+**Sorun:** Şu an her session sıfırlanıyor. "Burak sabahları verimsiz çalışır" gibi pattern'ler öğrenilemiyor.
+**Çözüm:** Her konuşma sonunda insight_agent çalışır, ChromaDB'ye yazar. Session başında inject edilir.
+**Öncelik:** KRİTİK — bu olmadan gerçek JARVIS deneyimi imkansız.
 
-FastAPI + WebSocket server. `Pipeline` sınıfı ses pipeline'ını ayrı thread'de yönetir.
+### 2. Proaktif Davranış (Anomaly Detection)
+**Sorun:** Jarvan reaktif — sen söylemedikçe konuşmuyor.
+**Çözüm:** ProactiveEngine her dakika screen context + memory'yi değerlendiriyor. Tetiklenirse konuşuyor.
+**Öncelik:** YÜKSEK — JARVIS'i JARVIS yapan şey bu.
 
-**WebSocket mesajları (frontend → backend):**
-- `{"type": "start"}` → pipeline.start()
-- `{"type": "stop"}` → pipeline.stop()
-- `{"type": "toggle_live", "enabled": bool}` → Live ↔ VAD geçişi
-- `{"type": "toggle_proactive", "enabled": bool}` → 1 FPS video stream aç/kapat
+### 3. Voicebox Entegrasyonu
+**Sorun:** TTS, STT, ses klonlama ayrı ayrı yönetiliyor.
+**Çözüm:** Voicebox local çalışıyor, REST API + MCP server ship ediyor. Hasan Usta sesi için ses klonu oluştur, Chatterbox Turbo ile `[laugh]` tag'leri kullan.
+**Öncelik:** YÜKSEK — karakter tutarlılığı için.
 
-**WebSocket mesajları (backend → frontend):**
-- `{"type": "status", "running": bool, "live": bool, "proactive": bool}`
-- `{"type": "mode", "name": "unreal"|"unity"|"code"|"default"}`
-- `{"type": "log", "level": "user"|"jarvan"|"system"|"error", "text": str, "provider"?: str}`
+### 4. Tüm Araçları MCP'ye Taşımak
+**Sorun:** Her araç farklı interface, sadece Gemini Live kullanabiliyor.
+**Çözüm:** FastMCP ile her tool MCP server olur. Gemini CLI de, Live da, başka herhangi bir agent da kullanabilir.
+**Öncelik:** ORTA — uzun vadeli esneklik için kritik.
 
-**Conversation memory:** `Pipeline._emit_log()` her `user` ve `jarvan` logunu `conversation_memory` listesine ekler (max 20 mesaj). `LiveSession` yeniden bağlandığında bu liste system prompt'a inject edilir.
+### 5. Ambient Awareness (Takvim + Dosya Sistemi)
+**Sorun:** Jarvan ses ve ekranı biliyor ama takvim, açık dosyalar, sistem durumu bilmiyor.
+**Çözüm:** Calendar MCP, filesystem watcher, aktif uygulama listesi → memory'ye beslenir.
+**Öncelik:** ORTA — proaktif davranışı güçlendirir.
 
-**Retry mekanizması:** Live oturum çöktüğünde 5 kez yeniden bağlanmaya çalışır. 30s'den kısa çalıştıysa retry sayacı sıfırlanmaz, exponential backoff (max 8s).
+### 6. Görev Takibi ve Süreklilik
+**Sorun:** "Bu task 2 gündür bekliyor" diyemiyor, yarım kalan işleri bilmiyor.
+**Çözüm:** Obsidian'daki TODO notları + memory.json'daki aktif proje listesi → periyodik kontrol.
+**Öncelik:** ORTA.
 
----
-
-### `backend/ai/live_session.py`
-
-Tüm projenin kalbi. Gemini Live WebSocket bağlantısı ve araç sistemi.
-
-**Model:** `gemini-3.1-flash-live-preview`
-
-**Config:**
-```python
-INPUT_SAMPLE_RATE = 16000   # Mikrofon
-OUTPUT_SAMPLE_RATE = 24000  # Hoparlör
-OUTPUT_COOLDOWN_S = 0.8     # Jarvan konuşunca eko engeli
-VOICE_NAME = "Kore"         # Türkçe ses
-```
-
-**Session içindeki task'lar:**
-1. `_mic_loop()` — PyAudio'dan 32ms chunk okur, Gemini'ye gönderir. Jarvan konuşurken + 0.8s sonrasına kadar suspend (eko engeli).
-2. `_receive_loop()` — Ses, transkripsiyon ve tool_call alır. Tool gelince `_handle_tool_calls()` create_task ile spawn eder.
-3. `_stop_watcher()` — Pipeline stop flag izler.
-4. `_video_loop()` — (proaktif=True ise) 1 FPS, 720×720 JPEG, Gemini Live'a send_realtime_input(video=...).
-
-**Duplicate tool call koruması:**
-- `_inflight_tools: set[str]` — aynı anda iki kez çağrılamaz
-- `_tool_cooldown: dict[str, float]` — browser_task tamamlanınca 90s cooldown
-
-**System prompt yapısı (birleşik):**
-```
-modes/prompts.py → mod system prompt
-+ VISION_BEHAVIOR_HINT_PROACTIVE veya VISION_BEHAVIOR_HINT_FALLBACK
-+ TOOL_CONFIRMATION_HINT
-+ RESEARCH_HINT
-+ (varsa) conversation_memory inject
-```
-
-**Araçlar ve handler'ları:**
-
-| Araç | Handler | Notlar |
-|------|---------|--------|
-| `open_app` | `asyncio.to_thread(open_app)` | app_control.py |
-| `close_app` | `asyncio.to_thread(close_app)` | taskkill / osascript |
-| `get_weather` | `asyncio.to_thread(get_weather)` | weather.py |
-| `open_url` | `asyncio.to_thread(open_url)` | webbrowser.open |
-| `search_web` | `asyncio.to_thread(hidden_search)` → `_summarize_search()` | Tavily→DDGS, Flash Lite özetleme |
-| `open_result` | `last_search_results[idx]` → `open_url` | En son search sonuçlarını açar |
-| `see_screen` | `_describe_screen()` | mss → JPEG → Gemini vision |
-| `browser_task` | `run_browser_task()` | browser_agent.py, in-flight lock |
-| `browser_start` | `asyncio.to_thread(launch_debug_browser)` | Opera GX CDP port açar |
-| `browser_takeover` | `run_takeover_task()` | CDP'den mevcut browser'a bağlan |
-| `send_mail` | `asyncio.to_thread(send_mail)` | OAuth veya compose URL |
-| `send_whatsapp` | `asyncio.to_thread(send_whatsapp)` | URL scheme + pyautogui Enter |
-| `computer_use` | `run_computer_task()` | Otonom vision-action loop, pyautogui, in-flight lock |
-
-**`_summarize_search()`:** Ham Tavily/DDGS sonucunu Flash Lite ile Türkçe 2-4 cümleye indirir. Live'a JSON/URL gitmez → 1011 WebSocket kapanma riski azalır.
-
-**`_describe_screen()`:** mss ile ekran yakalar, 720×720 thumbnail, JPEG Q75, Gemini vision ile Türkçe 2-3 cümle analiz. Model sırası: `gemini-2.5-flash` → `gemini-2.5-flash-lite` → `gemini-3.1-flash-lite-preview`.
+### 7. Gemini CLI Dev Pipeline
+**Sorun:** crazy_mode hâlâ eski multi-agent loop, 1M context kullanmıyor.
+**Çözüm:** CLI subprocess entegrasyonu — büyük refactor ve yeni modül işlerini CLI'ye devret.
+**Öncelik:** DÜŞÜK — sadece dev workflow'u etkiler.
 
 ---
 
-### `backend/tools/browser_agent.py`
+## 🗺️ Versiyon Yol Haritası
 
-browser-use 0.5.x tabanlı otonom tarayıcı ajanı.
-
-**Sabitler:**
-```python
-CDP_PORT = 9223           # Jarvan'ın kendi debug browser portu
-TASK_TIMEOUT_S = 480      # 8 dakika max
-MAX_STEPS = 15
-```
-
-**Process-level task lock:**
-```python
-_TASK_LOCK = threading.Lock()
-_TASK_RUNNING = bool
-```
-LiveSession yeniden bağlandığında `_inflight_tools` set'i sıfırlanır ama eski browser görevi hâlâ çalışıyor olabilir. Module scope lock bunu engeller — hangi LiveSession instance'ı olursa olsun aynı flag görülür.
-
-**LLM rotasyonu (`RotatingChatGoogle`):**
-`browser_use.llm.ChatGoogle`'dan kalıtım alır (isinstance kontrolü zorunlu). Rolling 60s RPM penceresi — `deque` tabanlı call tracking. Pool:
-```python
-MODEL_POOL = [
-    ("gemma-4-26b-a4b-it", 15),           # 1500 RPD
-    ("gemini-3.1-flash-lite-preview", 15), # 500 RPD
-]
-SAFETY_MARGIN = 1  # limitin 1 altında anahtarla
-```
-
-**`run_browser_task(task)` akışı:**
-1. Task slot kontrolü (`_try_acquire_task_slot`)
-2. `_cdp_up(9223)` → True ise CDP'ye bağlan
-3. False ise `launch_debug_browser(9223)` → Opera GX başlat
-4. Hâlâ False ise → fresh Chromium (BROWSER_PROFILE_DIR)
-5. `controller = Controller(exclude_actions=["extract_structured_data"])` — prompt yasağı yetmediği için action seviyesinde hard disable
-6. `agent.run(max_steps=15, timeout=480s)`
-7. `history.final_result()` → 600 char limit, Attachments/ kesimi
-
-**`launch_debug_browser(port)`:**
-```
-BROWSER_BINARY (Opera GX) + --remote-debugging-port={port} + --user-data-dir=BROWSER_PROFILE_DIR
-```
-- Windows: `%LOCALAPPDATA%\Programs\Opera GX\opera.exe`
-- Mac: `/Applications/Opera GX.app/Contents/MacOS/Opera`
-- Jarvan'a ait ayrı profil kullanır (BROWSER_PROFILE_DIR) — kullanıcının asıl Opera'sı açıkken SingletonLock çakışmasını önler
-- İlk açılışta kullanıcı bir kez login yapar, sonra kalıcı
-
-**`run_takeover_task(task)`:**
-Kullanıcı "devral", "kaldığım yerden devam et" dediğinde. CDP :9223'e bağlanır, kullanıcının açık tab'larından devam eder. CDP kapalıysa hata döner (auto-launch yok — takeover için kullanıcının debug modda açtığı browser şart).
-
-**`_READ_ONLY_PREFIX`** — tüm browser görevlerine eklenen güvenlik + taktik prompt:
-- `extract_structured_data` yasağı (HTML parsing timeout)
-- Uçuş: Google Flights (iç hat) / Enuygun (dış hat)
-- CAPTCHA görürse 60s bekle, human-in-the-loop
-- Sonucu ekrandan oku, done ile KISA özetle
-
-**Platform profil yolları:**
-```python
-# Jarvan'ın kendi profili (BROWSER_PROFILE_DIR):
-# Windows: %LOCALAPPDATA%\jarvan-opera-profile
-# Mac: ~/Library/Application Support/jarvan-opera-profile
-
-# Kullanıcının gerçek Opera profili (_resolve_real_opera_profile):
-# Windows: %APPDATA%\Opera Software\Opera GX Stable
-# Mac: ~/Library/Application Support/com.operasoftware.OperaGX
-```
+| Versiyon | Odak | Durum |
+|----------|------|-------|
+| v0.3 | Gemini Live + memory.json + Obsidian | ✅ Tamamlandı |
+| v0.4 | ChromaDB RAG + insight_agent | 🔄 Sıradaki |
+| v0.5 | Voicebox entegrasyonu + ses karakteri | 🔄 Planlandı |
+| v0.6 | ProactiveEngine + anomaly detection | 🔄 Planlandı |
+| v0.7 | Tüm araçlar FastMCP'ye taşındı | 🔄 Planlandı |
+| v0.8 | Gemini CLI subprocess + Calendar MCP | 🔄 Planlandı |
+| v1.0 | Görev takibi + ambient awareness | 🔄 Uzun vade |
 
 ---
 
-### `backend/tools/computer_use.py`
+## 🛡️ Teknik Kararlar ve Gerekçeler
 
-Otonom bilgisayar kontrol ajanı — pyautogui + Gemini Vision. Tarayıcı dışı HER uygulamayı kontrol edebilir.
-
-**Sabitler:**
-```python
-MAX_STEPS = 15            # Sonsuz döngü koruması
-TASK_TIMEOUT_S = 300      # 5 dakika max
-SCREENSHOT_SIZE = (1280, 720)  # Vision model input
-ACTION_DELAY_S = 1.5      # UI tepkisi için bekleme
-```
-
-**Agent loop akışı:**
-```
-1. mss ile ekran yakala → 1280x720 JPEG thumbnail
-2. Gemini Vision'a gönder (system prompt + step prompt + screenshot)
-3. Model JSON action döner: {"action": "click", "x": 450, "y": 320, "reason": "..."}
-4. do_action() ile pyautogui yürüt
-5. 1.5s bekle (UI tepkisi)
-6. "done" gelene kadar veya 15 adıma kadar tekrarla
-7. Sonucu metin olarak LiveSession'a dön
-```
-
-**Desteklenen aksiyonlar:** `click`, `double_click`, `right_click`, `type_text`, `hotkey`, `scroll`, `move`, `drag`, `wait`, `done`
-
-**Koordinat dönüşümü:** Model 1280x720 thumbnail üzerinde düşünüyor → `_scale_coords()` gerçek monitör çözünürlüğüne + multi-monitor offset'e çevirir.
-
-**Türkçe karakter desteği:** `_clipboard_paste()` — pyautogui.write() yerine platform-native clipboard (Mac: pbcopy, Win: PowerShell Set-Clipboard) + Ctrl/Cmd+V
-
-**Hotkey normalizasyonu:** `_normalize_hotkey()` — `ctrl+c` Mac'te otomatik `command+c` olur.
-
-**Process-level task lock:** browser_agent.py ile aynı pattern — `_TASK_LOCK` + `_TASK_RUNNING`
-
-**Güvenlik:** `pyautogui.FAILSAFE = True` (mouse köşeye gidince dur), prompt'ta tehlikeli işlem yasağı
+| Karar | Gerekçe |
+|-------|---------|
+| Gemini Live orchestrator | ~200ms gecikme, ses + ekran aynı anda |
+| Local model yok | Test edildi, kalite yetersiz |
+| DeepSeek V4 hızlı araçlar için | $0.28/M token, Gemini limit tasarrufu |
+| Kimi K2.6 sadece deep_research | 300 alt-ajan, hallucination düşük, nadir çağrılır |
+| Voicebox TTS/STT | Local, MIT, MCP built-in, Türkçe, ses klonlama |
+| FastMCP Python | `@mcp.tool()` decorator ile dakikada server |
+| ChromaDB persistent | Hafıza session'a bağlı değil, kalıcı |
+| Syncthing Mac/Win sync | Bulut gerektirmiyor, P2P, ücretsiz |
+| FastAPI backend | Tüm hafıza ve state burada yaşar |
 
 ---
 
-### `backend/tools/browser.py`
-
-**`open_url(url)`** — `webbrowser.open()` ile varsayılan tarayıcıda aç.
-
-**`hidden_search(query)`** — Arka planda Tavily API çağırır, fail olursa DuckDuckGo (ddgs). Tarayıcı açmaz. `live_session._summarize_search()` bunu çağırır.
-
----
-
-### `backend/tools/mail.py`
-
-**`send_mail(to, subject, body, auto_send)`**
-
-`to` → `contacts.resolve_email()` → email adresi (rehberde isim varsa çevirir)
-
-- `auto_send=True`: Gmail API (OAuth) → direkt gönderir. `credentials.json` ve `token.json` gerekli.
-- `auto_send=False`: `https://mail.google.com/mail/?view=cm&...` compose URL aç.
-
-OAuth flow: `token.json` yoksa veya süresi dolmuşsa `InstalledAppFlow` → localhost'ta browser açar.
-
----
-
-### `backend/tools/whatsapp.py`
-
-**`send_whatsapp(message, phone=None)`**
-
-`phone` → `contacts.resolve_phone()` → numara (rehberde isim varsa çevirir)
-
-Akış:
-1. `whatsapp://send?phone={num}&text={msg}` URL'sini `webbrowser.open()` ile aç
-2. WhatsApp başlamasını bekle (5s eğer çalışmıyorsa, 3s çalışıyorsa)
-3. Enter bas: Mac=osascript keystroke, Windows=pygetwindow+pyautogui
-
----
-
-### `backend/tools/app_control.py`
-
-`APP_ALIASES` dict'i: uygulama adı → `{win: exe, mac: app_name}`.
-
-- `open_app`: Windows → `cmd /c start "exe"`, Mac → `open -a "App"`
-- `close_app`: Windows → `taskkill /IM exe /F`, Mac → osascript quit → pkill fallback
-
----
-
-### `backend/tools/weather.py`
-
-`requests` ile `wttr.in/?format=j1` JSON API çağırır. Şehir adını alır, anlık + yarınki hava döner.
-
----
-
-### `backend/modes/`
-
-**`detector.py`:** `pygetwindow.getActiveWindow()` → pencere başlığı → `WINDOW_MODE_MAP` eşleşmesi.
-
-```python
-WINDOW_MODE_MAP = [
-    (["Unreal", "UE5", "UE4"], "unreal", UNREAL_PROMPT),
-    (["Unity"], "unity", UNITY_PROMPT),
-    (["Visual Studio Code", "Code", "Cursor", "PyCharm", "Rider", "CLion"], "code", CODE_PROMPT),
-]
-# Eşleşme yoksa → "default", DEFAULT_PROMPT
-```
-
-**`prompts.py`:** Her mod için ayrı system prompt. Tümü Türkçe, samimi ton. Sesli asistan kuralları (max 2-3 cümle, markdown yok, liste yok) sadece DEFAULT_PROMPT'ta; diğer modlarda daha teknik.
-
----
-
-### `backend/audio/vad_gate.py` (legacy)
-
-Silero VAD tabanlı state machine. Live mod kullanılmıyorsa devreye girer.
-
-```
-State: SILENCE → SPEECH → HANGOVER → (4s sonra) SILENCE + FINALIZE
-```
-
-Parametreler (Omi'den alındı):
-```python
-VAD_GATE_SPEECH_THRESHOLD    = 0.65
-VAD_GATE_HANGOVER_MS         = 4000  # 4s bekle, cümle ortasında kesme
-VAD_GATE_FINALIZE_SILENCE_MS = 300
-```
-
----
-
-### `backend/audio/transcriber.py` (legacy)
-
-```python
-WhisperModel("small", device="cpu", compute_type="int8")
-# language="tr", beam_size=5, vad_filter=False (VAD bizde)
-```
-
----
-
-### `backend/screen/capture.py`
-
-`mss` ile ekran yakalar. `SCREEN_MONITOR_INDEX=2` (config.py) → ikinci monitör. PIL Image veya base64 JPEG döner.
-
----
-
-### `backend/tts/speaker.py` (legacy)
-
-`edge-tts tr-TR-EmelNeural` + `pygame` ile ses çalar. Sadece VAD modu için; Live modda Gemini'nin kendi native audio'su kullanılıyor.
-
----
-
-### `backend/config.py`
-
-```python
-GEMINI_API_KEY     # .env'den
-TAVILY_API_KEY     # .env'den, search_web için
-MY_WHATSAPP        # .env'den, kullanıcının kendi numarası
-SCREEN_MONITOR_INDEX = 2   # İkinci monitör
-```
-
----
-
-### Frontend (Electron + React + Vite)
-
-**Stack:** Electron 33, React 18, TypeScript, Tailwind CSS, Framer Motion, Lucide
-
-**Başlatma:**
-```
-npm run dev → Vite build → Electron main → backend spawn (python main.py) → WebSocket /ws bağlantısı
-```
-
-**UI:**
-- Ses aç/kapat (start/stop pipeline)
-- Live mod toggle (Gemini Live ↔ VAD)
-- Proaktif mod toggle (1 FPS video stream)
-- Aktif mod göstergesi (Unreal / Unity / Code / Default)
-- Log ekranı (user / jarvan / system / error)
-
----
-
-## Kurulum
-
-### .env (backend/.env)
-```
-GEMINI_API_KEY=...
-TAVILY_API_KEY=...       # opsiyonel, DDGS fallback var
-MY_WHATSAPP=905XXXXXXXXX # ülke koduyla, + olmadan
-```
-
-### Gmail OAuth
-```
-backend/credentials.json → Google Cloud Console'dan indir
-İlk çalıştırmada browser açılır → giriş yap → token.json oluşur
-```
-
-### Python
-```bash
-cd backend
-python -m venv .venv
-.venv\Scripts\activate   # Windows
-pip install -r requirements.txt
-python main.py           # Direkt test
-```
-
-### Frontend
-```bash
-cd frontend
-npm install
-npm run dev              # Electron + Vite dev mode
-```
-
----
-
-## Browser Agent Debug
-
-Windows'ta browser agent sorun çıkardığında:
-
-```powershell
-cd C:\...\JARVAN\backend
-.venv\Scripts\python.exe -c "
-from tools.browser_agent import _cdp_up, launch_debug_browser, BROWSER_BINARY, BROWSER_PROFILE_DIR, CDP_PORT
-print('binary:', BROWSER_BINARY)
-print('profile_dir:', BROWSER_PROFILE_DIR)
-print('cdp_up_before:', _cdp_up(CDP_PORT))
-print('launch_result:', launch_debug_browser())
-print('cdp_up_after:', _cdp_up(CDP_PORT))
-"
-```
-
-**Beklenen:** `binary` Opera GX path döner, `launch_result` ok=True, `cdp_up_after` True.
-
-**Sıkça çıkan sorunlar:**
-- `binary: None` → Opera GX kurulu değil ya da PATH farklı
-- `cdp_up_after: False` → Opera GX başka bir pencerede açık ve BROWSER_PROFILE_DIR'ı kilitlemiş; Opera'yı kapat, tekrar dene
-- `SingletonLock` → `_cleanup_singleton_locks()` BROWSER_PROFILE_DIR'daki lock dosyalarını siler
-
----
-
-## Bilinen Kararlar / Trade-off'lar
-
-| Karar | Sebep |
-|-------|-------|
-| Live native audio (Gemini) → VAD/Whisper/TTS yok | Gecikme ~200ms, VRAM harcamıyor, Türkçe kalitesi iyi |
-| browser-use 0.5.x + RotatingChatGoogle kalıtımı | isinstance kontrolü nedeniyle ChatGoogle'dan kalıtım şart |
-| `extract_structured_data` action seviyesinde disable | Prompt yasağı yetersiz, 80-130s timeout Live session'ı donduruyor |
-| `keep_alive=False` (BrowserProfile) | True ise `session.stop()` hang ediyor, tool response gitmiyor |
-| Jarvan'a ayrı Opera profili (BROWSER_PROFILE_DIR) | Kullanıcının asıl Opera'sı açıkken SingletonLock çakışmasını önler |
-| CDP port 9223 (9222 değil) | 9222 kullanıcının kendi debug browser'ında olabilir |
-| Tavily → DDGS fallback | Tavily 1000 istek/ay, DDGS sınırsız ama daha yavaş |
-| Conversation memory = 20 mesaj system prompt inject | Live WebSocket kopunca bağlam kaybolur; inject ile süreklilik |
-| search_web sonucu Flash Lite ile özetlenir | Ham JSON/URL Live'a giderse 1011 kapanma riski artar |
-| Tool response'ta `_instruction` yok | Meta-field modeli konfüze edip halüsinasyona sebep oluyordu |
-| Keepalive (boş text frame) kaldırıldı | turn_complete=False frame'leri tool sonrası halüsinasyona yol açıyordu |
-
----
-
-## Yol Haritası
-
-### v0.1 ✅ — VAD MVP
-Silero VAD + Whisper + Gemini Flash + Edge TTS + mss ekran
-
-### v0.2 ✅ — Gemini Live
-Native audio dialog, 1 FPS video stream, proaktif mod, Live session
-
-### v0.3 ✅ — Context & Araçlar
-Conversation memory, browser agent, Gmail, WhatsApp, web arama, hava durumu, mod sistemi
-
-### v0.4 ✅ — Computer Use
-- `pyautogui` + Gemini Vision otonom agent loop (screenshot → action → repeat)
-- Koordinat dönüşümü (multi-monitor offset), Türkçe karakter desteği (clipboard paste)
-- Tehlikeli işlem koruması (FAILSAFE, prompt seviyesi yasak, onay mekanizması)
-
-### v0.5 — Ultra-Low Latency Agentic
-- Gemini function calling ile metin yerine JSON tool response
-- Gemini Live native audio'yu fully exploit et (300ms R-T-T hedefi)
-- User context state JSON olarak system prompt'a
-
-### v0.6 — Tam Otonomi
-- Proaktif inisiyatif (UE5 açıldığını detect edince kendisi konuşsun)
-- Shadow Coder (ekran geçmişi, rewind asistanı)
-- RAG + ChromaDB (kullanıcı davranış vektörleri)
-- Telegram remote execute tüneli
-
----
-
-## Geliştirici
-
-**Burak Emre Erdemci**  
-[burakerdemci.com](https://burakerdemci.com) · [github.com/BurakErdemci](https://github.com/BurakErdemci)
-
----
-
-## Gelişmeler (23 Nisan 2026)
-
-### ✅ Teknik İyileştirmeler
-- **Asenkron Ses Pipeline'ı:** `audio_queue` ve `_playback_loop` mimarisine geçildi. Ses çalma işlemi artık ana mantık döngüsünü bloklamıyor.
-- **Düşük Gecikmeli Etkileşim:** `OUTPUT_COOLDOWN_S` 0.4s'ye çekildi. Ses paketleri için "Lag Watchdog" eklendi.
-- **Cerrahi Analiz Motoru (Kimi k2.6):** `moonshotai/kimi-k2.6` (OpenRouter) entegrasyonu ile derin internet araştırması ve akıl yürütme (reasoning) yeteneği eklendi.
-- **Hafıza Odaklı Raporlama:** Araştırma sonuçları `last_research_result` olarak RAM'de saklanıyor.
-
-### 🎯 Ek Planlananlar
-- **Asla Pes Etme (Browser Fallback):** `deep_research` sonucu yetersiz gelirse, sistemin otomatik olarak `browser_task` aracını tetiklemesi için Python seviyesinde kontrol mekanizması.
-- **Obsidian Memory Integration:** Jarvan'ın araştırma sonuçlarını ve seninle olan önemli diyaloglarını doğrudan senin **Obsidian Vault**'una `.md` dosyaları olarak işlemesi ve oradan RAG (hafıza) çekmesi.
-- **Claude 4.x Modülü:** Ultra-hassas UI tasarımı ve karmaşık kodlama görevleri için **Claude Opus 4.7** ve **Sonnet 4.6**'nın opsiyonel modül olarak eklenmesi.
-- **Jarvan Macros (Deterministik Scriptler):** Steam, LoL, Spotify gibi sabit adımlı işlemler için LLM yerine Python/AppleScript tabanlı hızlı makrolar.
+*"Jarvan sadece bir yazılım değildir; o, senin dijital dünyadaki kılıcın, kalkanın ve sadık yoldaşındır."* ⚔️🛡️🤖

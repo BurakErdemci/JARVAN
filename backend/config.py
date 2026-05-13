@@ -6,6 +6,12 @@ load_dotenv()
 # Gemini
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
+# Feature flags
+# Experimental worker/MCP paths stay out of the live voice runtime until the
+# core Live + memory loop is stable.
+ENABLE_EXPERIMENTAL_WORKERS = os.getenv("ENABLE_EXPERIMENTAL_WORKERS", "0") == "1"
+ENABLE_MCP_HUB = os.getenv("ENABLE_MCP_HUB", "0") == "1"
+
 # Tavily (LLM-odaklı web arama, 1000 istek/ay free)
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
 

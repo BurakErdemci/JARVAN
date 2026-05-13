@@ -21,6 +21,8 @@ backend/contacts.json
 backend/contacts_phones.json
 backend/credentials.json
 backend/token.json
+backend/token_*.json
+backend/spotify_token.json
 
 # OS
 .DS_Store
@@ -57,3 +59,7 @@ backend/data/
 backend/backend/
 backend/output.md
 backend/autonomous_output.py
+backend/test_gemini_worker.py
+
+# Playwright browser profile
+.jarvan-browser-profile/

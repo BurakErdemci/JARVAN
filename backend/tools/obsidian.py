@@ -1,8 +1,15 @@
 import os
 from ai.obsidian_manager import ObsidianManager
 
-# Varsayılan Vault yolu (JarvanVault içindeki JARVAN klasörü)
-DEFAULT_VAULT_PATH = "/Users/burakemreerdemci/Documents/JarvanVault/JARVAN"
+import platform
+
+# İşletim sistemine göre vault yolunu belirle
+if platform.system() == "Darwin":
+    # Mac yolu
+    DEFAULT_VAULT_PATH = "/Users/burakemreerdemci/Documents/JarvanVault/JARVAN"
+else:
+    # Windows yolu (Kullanıcının belirttiği C kök dizini)
+    DEFAULT_VAULT_PATH = "C:\\JarvanVault\\JARVAN"
 
 # Singleton instance
 _manager = None
