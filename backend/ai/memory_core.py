@@ -71,12 +71,15 @@ class MemoryCore:
     Anıları ve içgörüleri zaman damgalı olarak vektör tabanında saklar.
     """
     def __init__(self, db_path: str = "./data/chroma"):
-        # Veri klasörünü oluştur
+        # MEMORY_READ_ONLY=1 → Windows gibi ikincil cihazlarda yazma engellenir
+        self._read_only = os.getenv("MEMORY_READ_ONLY", "0") == "1"
+
         if not os.path.exists(db_path):
             os.makedirs(db_path, exist_ok=True)
-            
-        # ChromaDB istemcisini başlat
+
         self.client = chromadb.PersistentClient(path=db_path)
+        if self._read_only:
+            logger.info("[memory] Read-only mod aktif — hafıza yazma devre dışı.")
         
         # API anahtarını al
         api_key = os.getenv("GEMINI_API_KEY")
@@ -96,7 +99,11 @@ class MemoryCore:
     def save_insight(self, text: str, type: str = "behavioral") -> str:
         """
         Yeni bir içgörü veya anı kaydeder. Otomatik zaman damgası ekler.
+        Read-only modda (ikincil cihaz) sessizce pas geçer.
         """
+        if self._read_only:
+            logger.debug("[memory] Read-only: save_insight atlandı.")
+            return "read_only"
         now = datetime.now()
         timestamp_str = now.strftime("%Y-%m-%d %H:%M:%S")
         insight_id = f"insight_{now.timestamp()}"
@@ -133,6 +140,57 @@ class MemoryCore:
             logger.error(f"Hafıza sorgulama hatası: {e}")
             return []
 
+    def export_all(self) -> List[Dict[str, Any]]:
+        """Tüm hafızaları dışa aktarır — sync için kullanılır."""
+        try:
+            result = self.collection.get(include=["documents", "metadatas", "embeddings"])
+            records = []
+            for i, doc_id in enumerate(result["ids"]):
+                records.append({
+                    "id": doc_id,
+                    "document": result["documents"][i],
+                    "metadata": result["metadatas"][i],
+                })
+            return records
+        except Exception as e:
+            logger.error(f"Export hatası: {e}")
+            return []
+
+    def import_insights(self, records: List[Dict[str, Any]], source: str = "sync") -> int:
+        """Dışarıdan gelen hafızaları import eder, zaten varsa atlar."""
+        imported = 0
+        for r in records:
+            try:
+                doc_id = f"{r['id']}_{source}"
+                existing = self.collection.get(ids=[doc_id])
+                if existing["ids"]:
+                    continue
+                self.collection.add(
+                    documents=[r["document"]],
+                    metadatas=[{**r.get("metadata", {}), "source": source}],
+                    ids=[doc_id],
+                )
+                imported += 1
+            except Exception as e:
+                logger.debug(f"Import atlandı ({r.get('id')}): {e}")
+        if imported:
+            logger.info(f"[memory] {imported} hafıza import edildi (kaynak: {source})")
+        return imported
+
+    def get_all_embeddings(self) -> Dict[str, Any]:
+        """Deduplication için tüm kayıtları embedding'leriyle döner."""
+        try:
+            return self.collection.get(include=["documents", "metadatas", "embeddings"])
+        except Exception as e:
+            logger.error(f"Embedding getirme hatası: {e}")
+            return {"ids": [], "documents": [], "metadatas": [], "embeddings": []}
+
+    def delete_by_ids(self, ids: List[str]) -> None:
+        """Belirtilen id'leri siler — deduplication sonrası kullanılır."""
+        if ids:
+            self.collection.delete(ids=ids)
+            logger.info(f"[memory] {len(ids)} duplikat silindi.")
+
     def get_session_context(self) -> str:
         """
         Session başında JARVAN'ın 'bilinçaltına' enjekte edilecek özet hafızayı oluşturur.
@@ -150,5 +208,8 @@ _memory_instance = None
 def get_memory_core() -> MemoryCore:
     global _memory_instance
     if _memory_instance is None:
-        _memory_instance = MemoryCore()
+        _base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        default = os.path.join(_base, "data", "chroma")
+        db_path = os.getenv("CHROMA_DB_PATH", default)
+        _memory_instance = MemoryCore(db_path=db_path)
     return _memory_instance

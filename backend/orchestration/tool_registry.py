@@ -10,6 +10,9 @@ from tools.browser import open_url
 from tools.mail import send_mail, check_mail, read_mail_body
 from tools.weather import get_weather
 from tools.developer import create_folder
+from tools.memory_backup import backup_memory, get_backup_status
+from tools.device_transfer import send_to_device, get_transfer_status
+from tools.filesystem import find_file, read_file, list_directory
 
 # ─── Konfigürasyon ──────────────────────────────────────────────────
 
@@ -41,6 +44,95 @@ FUNCTION_DECLARATIONS = [
             },
             "required": ["name"],
         },
+    },
+    {
+        "name": "find_file",
+        "description": (
+            "Bilgisayarda dosya veya klasör arar. "
+            "'rapor.pdf nerede', 'masaüstündeki excel dosyası', 'proje klasörünü bul' gibi isteklerde kullan. "
+            "Masaüstü, Belgeler, İndirmeler ve Home klasörlerinde otomatik tarar."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Aranacak dosya/klasör adı veya anahtar kelime"},
+                "search_in": {"type": "string", "description": "Aranacak klasör (opsiyonel): 'masaüstü', 'downloads', tam yol vb."},
+            },
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "read_file",
+        "description": (
+            "Bir dosyanın içeriğini okur. Metin, kod, markdown, PDF desteklenir. "
+            "'şu dosyayı oku', 'bu PDF ne diyor', 'o kod dosyasına bak' gibi isteklerde kullan."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Dosya yolu — tam yol veya 'masaüstü/rapor.pdf' gibi"},
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "list_directory",
+        "description": (
+            "Bir klasörün içindeki dosya ve klasörleri listeler. "
+            "'masaüstümde ne var', 'indirmeler klasörüne bak' gibi isteklerde kullan."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Klasör yolu — 'masaüstü', 'downloads', 'belgeler' veya tam yol."},
+            },
+        },
+    },
+    {
+        "name": "send_to_device",
+        "description": (
+            "Bir dosya veya klasörü diğer cihaza gönderir (Mac→Windows veya Windows→Mac). "
+            "Klasörler otomatik zip'lenir. Syncthing üzerinden iletilir, karşı Jarvan sesli bildirir. "
+            "Önce find_file ile dosyayı bul, tam path'i bu tool'a ver."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "file_path": {
+                    "type": "string",
+                    "description": "Gönderilecek dosyanın tam yolu",
+                },
+                "message": {
+                    "type": "string",
+                    "description": "Dosyayla birlikte iletilecek kısa not (opsiyonel)",
+                },
+                "device": {
+                    "type": "string",
+                    "enum": ["mac", "windows"],
+                    "description": "Hedef cihaz. Belirtilmezse diğer cihaza gönderilir.",
+                },
+            },
+            "required": ["file_path"],
+        },
+    },
+    {
+        "name": "get_transfer_status",
+        "description": "Gelen kutusundaki dosyaları listeler — karşı cihazdan ne gelmiş gösterir.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "backup_memory",
+        "description": (
+            "Jarvan'ın tüm hafızasını (ChromaDB, Obsidian vault, memory.json) Google Drive'a yedekler. "
+            "Kullanıcı 'hafızamı yedekle', 'yedeğimi al', 'backup yap' gibi şeyler dediğinde kullan. "
+            "Sadece Mac'te çalışır (hafıza master cihazı)."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "get_backup_status",
+        "description": "Google Drive'daki mevcut hafıza yedeklerini listeler. Kaç yedek var, en son ne zaman alınmış gösterir.",
+        "parameters": {"type": "object", "properties": {}},
     },
     {
         "name": "get_weather",
@@ -371,6 +463,17 @@ TOOL_IMPL = {
         account=args.get("account"),
     ),
     "send_whatsapp": lambda args: send_whatsapp(args.get("message", ""), args.get("phone")),
+    "find_file": lambda args: find_file(args.get("name", ""), args.get("search_in")),
+    "read_file": lambda args: read_file(args.get("path", "")),
+    "list_directory": lambda args: list_directory(args.get("path", "desktop")),
+    "backup_memory": lambda args: backup_memory(),
+    "get_backup_status": lambda args: get_backup_status(),
+    "send_to_device": lambda args: send_to_device(
+        file_path=args.get("file_path", ""),
+        message=args.get("message", ""),
+        device=args.get("device", "windows" if __import__("platform").system() == "Darwin" else "mac"),
+    ),
+    "get_transfer_status": lambda args: get_transfer_status(),
 }
 
 RESEARCH_HINT = (

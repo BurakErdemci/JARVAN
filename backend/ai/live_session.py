@@ -180,6 +180,25 @@ class LiveSession:
                 notification_queue = asyncio.Queue()
                 set_notification_queue(notification_queue)
 
+                # Dosya transfer bildirimleri için callback bağla
+                from tools.device_transfer import set_incoming_callback
+                async def _on_transfer(path, manifest):
+                    from_dev = manifest.get("from", "diğer cihaz")
+                    fname = manifest.get("file", path.name)
+                    msg_txt = manifest.get("message", "")
+                    size_kb = manifest.get("size_kb", 0)
+                    delivered = manifest.get("delivered_to", "")
+                    note = f" Not: {msg_txt}" if msg_txt else ""
+                    location = f" İndirmeler/Jarvan klasörüne kaydedildi." if delivered else ""
+                    await session.send(
+                        input=(
+                            f"[SİSTEM: {from_dev}'dan '{fname}' dosyası geldi ({size_kb} KB).]{note}{location}\n"
+                            f"Kullanıcıya bunu doğal ve kısa bir şekilde sesli bildir."
+                        ),
+                        end_of_turn=True,
+                    )
+                set_incoming_callback(_on_transfer)
+
                 # Briefing arka planda hazırla — "Uyan" gelince hazır olsun
                 asyncio.create_task(get_briefing_agent().prefetch())
 
@@ -253,14 +272,10 @@ class LiveSession:
                 if self.is_speaking or (time.monotonic() - self.last_output_time < OUTPUT_COOLDOWN_S):
                     continue
 
-                # --- Lag Monitoring ---
-                loop_end = time.monotonic()
-                if loop_end - loop_start > 0.05:  # 50ms'den fazla sürerse uyar
-                    print(f"[Jarvan] LAG UYARISI: Transmit loop yavaşladı! ({loop_end - loop_start:.3f}s)")
-
-                await session.send_realtime_input(
+                # Sesi gönderirken mic döngüsünü (PyAudio buffer) bloklamamak için async task kullanıyoruz
+                asyncio.create_task(session.send_realtime_input(
                     audio=types.Blob(data=data, mime_type=f"audio/pcm;rate={INPUT_SAMPLE_RATE}")
-                )
+                ))
         except asyncio.CancelledError:
             pass
         except Exception as e:

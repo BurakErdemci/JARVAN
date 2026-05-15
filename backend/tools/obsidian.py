@@ -3,13 +3,12 @@ from ai.obsidian_manager import ObsidianManager
 
 import platform
 
-# İşletim sistemine göre vault yolunu belirle
-if platform.system() == "Darwin":
-    # Mac yolu
-    DEFAULT_VAULT_PATH = "/Users/burakemreerdemci/Documents/JarvanVault/JARVAN"
-else:
-    # Windows yolu (Kullanıcının belirttiği C kök dizini)
-    DEFAULT_VAULT_PATH = "C:\\JarvanVault\\JARVAN"
+def _default_vault() -> str:
+    if platform.system() == "Darwin":
+        return "/Users/burakemreerdemci/Documents/JarvanVault/JARVAN"
+    return r"C:\JarvanVault\JARVAN"
+
+DEFAULT_VAULT_PATH = os.getenv("OBSIDIAN_VAULT_PATH", _default_vault())
 
 # Singleton instance
 _manager = None
