@@ -209,36 +209,56 @@ async def event_pump():
         await manager.broadcast(event.to_dict())
 
 
-async def _backup_scheduler():
-    """Her gece 23:00'de hafızayı Google Drive'a yedekler (sadece Mac)."""
+async def _nightly_scheduler():
+    """Her gece 23:xx'de hafıza sync + Drive yedek çalıştırır.
+    Backend o saatte kapalıysa açılışta bugünün sync'ini hemen yapar."""
     import platform
-    if platform.system() != "Darwin":
-        return
-    from datetime import datetime
-    from tools.memory_backup import backup_memory
+    from datetime import datetime, date
+    from tools.memory_sync import nightly_sync, _load_json, STATE_FILE
 
-    last_backup_date = None
+    IS_MAC = platform.system() == "Darwin"
+
+    def _last_sync_date():
+        state = _load_json(STATE_FILE)
+        if not state or "last_sync" not in state:
+            return None
+        try:
+            return datetime.fromisoformat(state["last_sync"]).date()
+        except Exception:
+            return None
+
+    async def _run_sync():
+        try:
+            result = await asyncio.to_thread(nightly_sync)
+            print(f"[sync] {result}", flush=True)
+        except Exception as e:
+            print(f"[sync] Hata: {e}", flush=True)
+        if IS_MAC:
+            try:
+                from tools.memory_backup import backup_memory
+                result = await asyncio.to_thread(backup_memory)
+                print(f"[backup] {result.get('result') or result.get('error')}", flush=True)
+            except Exception as e:
+                print(f"[backup] Hata: {e}", flush=True)
+
+    # Açılışta: bugün sync yapılmadıysa hemen çalıştır
+    await asyncio.sleep(10)  # backend tam ayağa kalksın
+    if _last_sync_date() != date.today():
+        print("[sync] Bugün henüz sync yapılmamış, başlatılıyor...", flush=True)
+        await _run_sync()
+
     while True:
         await asyncio.sleep(60)
         now = datetime.now()
-        today = now.date()
-        if now.hour == 23 and now.minute == 0 and last_backup_date != today:
-            last_backup_date = today
-            try:
-                result = await asyncio.to_thread(backup_memory)
-                if result.get("ok"):
-                    print(f"[backup] Basarili: {result.get('result')}", flush=True)
-                else:
-                    print(f"[backup] Hata: {result.get('error')}", flush=True)
-            except Exception as e:
-                print(f"[backup] Beklenmedik hata: {e}", flush=True)
+        if now.hour == 23 and _last_sync_date() != date.today():
+            await _run_sync()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from tools.device_transfer import start_watcher, stop_watcher
     task = asyncio.create_task(event_pump())
-    backup_task = asyncio.create_task(_backup_scheduler())
+    backup_task = asyncio.create_task(_nightly_scheduler())
     loop = asyncio.get_event_loop()
     start_watcher(loop)
     yield

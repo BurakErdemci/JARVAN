@@ -35,7 +35,12 @@ INBOX_DIR     = TRANSFER_DIR / f"to_{THIS_DEVICE}"    # benim gelen kutum
 OUTBOX_DIR    = TRANSFER_DIR / f"to_{OTHER_DEVICE}"   # karşı tarafa giden
 MANIFEST_DIR  = TRANSFER_DIR / "manifests"
 
-for _d in [INBOX_DIR, OUTBOX_DIR, MANIFEST_DIR]:
+# Gelen dosyalar buraya teslim edilir (kullanıcının kolayca göreceği yer)
+# Mac: ~/Downloads/Jarvan   Windows: ~/Downloads/Jarvan
+DELIVERY_DIR = Path(os.getenv("JARVAN_DELIVERY_PATH",
+    str(Path.home() / "Downloads" / "Jarvan")))
+
+for _d in [INBOX_DIR, OUTBOX_DIR, MANIFEST_DIR, DELIVERY_DIR]:
     _d.mkdir(parents=True, exist_ok=True)
 
 
@@ -43,25 +48,37 @@ for _d in [INBOX_DIR, OUTBOX_DIR, MANIFEST_DIR]:
 
 def send_to_device(file_path: str, message: str = "", device: str = OTHER_DEVICE) -> dict:
     """
-    Dosyayı Syncthing ortak klasörüne kopyalar.
-    Syncthing karşı cihaza otomatik iletir.
+    Dosya veya klasörü Syncthing ortak klasörüne kopyalar.
+    Klasörler otomatik zip'lenir. Syncthing karşı cihaza otomatik iletir.
     """
-    src = Path(file_path).expanduser()
+    import zipfile
+    from tools.filesystem import resolve_path
+    src = resolve_path(file_path)
     if not src.exists():
-        return {"ok": False, "error": f"Dosya bulunamadı: {file_path}"}
+        return {"ok": False, "error": f"Dosya bulunamadı: {src}. Tam yolu söyleyebilir misin?"}
 
     target_dir = TRANSFER_DIR / f"to_{device}"
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    dst = target_dir / src.name
-    # Aynı isimde dosya varsa timestamp ekle
-    if dst.exists():
-        stem = src.stem
-        suffix = src.suffix
-        ts = datetime.now().strftime("%H%M%S")
-        dst = target_dir / f"{stem}_{ts}{suffix}"
-
-    shutil.copy2(src, dst)
+    # Klasörse zip'le
+    if src.is_dir():
+        zip_name = src.name + ".zip"
+        dst = target_dir / zip_name
+        if dst.exists():
+            ts = datetime.now().strftime("%H%M%S")
+            dst = target_dir / f"{src.name}_{ts}.zip"
+        with zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zf:
+            for item in src.rglob("*"):
+                if item.is_file():
+                    zf.write(item, item.relative_to(src.parent))
+        is_folder = True
+    else:
+        dst = target_dir / src.name
+        if dst.exists():
+            ts = datetime.now().strftime("%H%M%S")
+            dst = target_dir / f"{src.stem}_{ts}{src.suffix}"
+        shutil.copy2(src, dst)
+        is_folder = False
 
     # Manifest yaz — karşı taraf bu dosyayı okuyup bildirim yapar
     manifest = {
@@ -71,6 +88,7 @@ def send_to_device(file_path: str, message: str = "", device: str = OTHER_DEVICE
         "message": message,
         "timestamp": datetime.now().isoformat(),
         "size_kb": dst.stat().st_size // 1024,
+        "is_folder": is_folder,
     }
     manifest_path = MANIFEST_DIR / f"{dst.stem}_{THIS_DEVICE}.json"
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -145,6 +163,20 @@ def set_incoming_callback(cb: callable) -> None:
 
 async def _on_file_received(path: Path, manifest: dict) -> None:
     logger.info(f"[transfer] Gelen dosya: {path.name} from={manifest.get('from')}")
+
+    # Dosyayı Downloads/Jarvan/ altına kopyala — kullanıcı oradan açar
+    try:
+        dst = DELIVERY_DIR / path.name
+        if dst.exists():
+            stem, suffix = path.stem, path.suffix
+            ts = datetime.now().strftime("%H%M%S")
+            dst = DELIVERY_DIR / f"{stem}_{ts}{suffix}"
+        shutil.copy2(path, dst)
+        manifest["delivered_to"] = str(dst)
+        logger.info(f"[transfer] Teslim edildi: {dst}")
+    except Exception as e:
+        logger.error(f"[transfer] Teslim hatası: {e}")
+
     if _notification_callback:
         try:
             await _notification_callback(path, manifest)

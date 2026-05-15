@@ -187,12 +187,13 @@ class LiveSession:
                     fname = manifest.get("file", path.name)
                     msg_txt = manifest.get("message", "")
                     size_kb = manifest.get("size_kb", 0)
+                    delivered = manifest.get("delivered_to", "")
                     note = f" Not: {msg_txt}" if msg_txt else ""
+                    location = f" İndirmeler/Jarvan klasörüne kaydedildi." if delivered else ""
                     await session.send(
                         input=(
-                            f"[SİSTEM: {from_dev}'dan dosya geldi.]{note}\n"
-                            f"Dosya adı: {fname} ({size_kb} KB). "
-                            f"Kullanıcıya bunu doğal bir şekilde sesli bildir."
+                            f"[SİSTEM: {from_dev}'dan '{fname}' dosyası geldi ({size_kb} KB).]{note}{location}\n"
+                            f"Kullanıcıya bunu doğal ve kısa bir şekilde sesli bildir."
                         ),
                         end_of_turn=True,
                     )

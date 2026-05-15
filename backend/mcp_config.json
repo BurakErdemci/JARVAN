@@ -4,7 +4,7 @@
       "command": "npx",
       "args": [
         "-y", "@playwright/mcp",
-        "--user-data-dir", "/Users/burakemreerdemci/.jarvan-browser-profile"
+        "--user-data-dir", "C:\\Users\\burcu\\AppData\\Local\\jarvan-browser-profile"
       ]
     },
     "playwright-headless": {
@@ -12,7 +12,7 @@
       "args": [
         "-y", "@playwright/mcp",
         "--headless",
-        "--user-data-dir", "/Users/burakemreerdemci/.jarvan-browser-profile"
+        "--user-data-dir", "C:\\Users\\burcu\\AppData\\Local\\jarvan-browser-profile"
       ]
     },
     "tavily": {
@@ -24,11 +24,16 @@
     },
     "filesystem": {
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/burakemreerdemci/Documents/JARVAN"]
+      "args": [
+        "-y", "@modelcontextprotocol/server-filesystem",
+        "C:\\Users\\burcu\\Desktop",
+        "C:\\Users\\burcu\\Documents",
+        "C:\\Users\\burcu\\Downloads"
+      ]
     },
     "spotify": {
-      "command": "/Users/burakemreerdemci/Documents/JARVAN/.venv/bin/python",
-      "args": ["/Users/burakemreerdemci/Documents/JARVAN/backend/mcp/spotify_server.py"]
+      "command": "C:\\Users\\burcu\\Downloads\\JARVAN-main\\backend\\.venv\\Scripts\\python.exe",
+      "args": ["C:\\Users\\burcu\\Downloads\\JARVAN-main\\backend\\mcp\\spotify_server.py"]
     }
   }
 }

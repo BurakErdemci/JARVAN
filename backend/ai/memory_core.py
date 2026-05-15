@@ -141,6 +141,57 @@ class MemoryCore:
             logger.error(f"Hafıza sorgulama hatası: {e}")
             return []
 
+    def export_all(self) -> List[Dict[str, Any]]:
+        """Tüm hafızaları dışa aktarır — sync için kullanılır."""
+        try:
+            result = self.collection.get(include=["documents", "metadatas", "embeddings"])
+            records = []
+            for i, doc_id in enumerate(result["ids"]):
+                records.append({
+                    "id": doc_id,
+                    "document": result["documents"][i],
+                    "metadata": result["metadatas"][i],
+                })
+            return records
+        except Exception as e:
+            logger.error(f"Export hatası: {e}")
+            return []
+
+    def import_insights(self, records: List[Dict[str, Any]], source: str = "sync") -> int:
+        """Dışarıdan gelen hafızaları import eder, zaten varsa atlar."""
+        imported = 0
+        for r in records:
+            try:
+                doc_id = f"{r['id']}_{source}"
+                existing = self.collection.get(ids=[doc_id])
+                if existing["ids"]:
+                    continue
+                self.collection.add(
+                    documents=[r["document"]],
+                    metadatas=[{**r.get("metadata", {}), "source": source}],
+                    ids=[doc_id],
+                )
+                imported += 1
+            except Exception as e:
+                logger.debug(f"Import atlandı ({r.get('id')}): {e}")
+        if imported:
+            logger.info(f"[memory] {imported} hafıza import edildi (kaynak: {source})")
+        return imported
+
+    def get_all_embeddings(self) -> Dict[str, Any]:
+        """Deduplikasyon için tüm kayıtları embedding'leriyle döner."""
+        try:
+            return self.collection.get(include=["documents", "metadatas", "embeddings"])
+        except Exception as e:
+            logger.error(f"Embedding getirme hatası: {e}")
+            return {"ids": [], "documents": [], "metadatas": [], "embeddings": []}
+
+    def delete_by_ids(self, ids: List[str]) -> None:
+        """Belirtilen id'leri siler — deduplication sonrası kullanılır."""
+        if ids:
+            self.collection.delete(ids=ids)
+            logger.info(f"[memory] {len(ids)} duplikat silindi.")
+
     def get_session_context(self) -> str:
         """
         Session başında JARVAN'ın 'bilinçaltına' enjekte edilecek özet hafızayı oluşturur.

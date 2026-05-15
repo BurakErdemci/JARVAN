@@ -13,6 +13,7 @@ from tools.developer import create_folder
 from tools.league import launch_league_client
 from tools.memory_backup import backup_memory, get_backup_status
 from tools.device_transfer import send_to_device, get_transfer_status
+from tools.filesystem import find_file, read_file, list_directory
 
 # ─── Konfigürasyon ──────────────────────────────────────────────────
 
@@ -46,11 +47,56 @@ FUNCTION_DECLARATIONS = [
         },
     },
     {
+        "name": "find_file",
+        "description": (
+            "Bilgisayarda dosya veya klasör arar. "
+            "'rapor.pdf nerede', 'masaüstündeki excel dosyası', 'proje klasörünü bul' gibi isteklerde kullan. "
+            "Masaüstü, Belgeler, İndirmeler ve Home klasörlerinde otomatik tarar."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Aranacak dosya/klasör adı veya anahtar kelime"},
+                "search_in": {"type": "string", "description": "Aranacak klasör (opsiyonel): 'masaüstü', 'downloads', tam yol vb."},
+            },
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "read_file",
+        "description": (
+            "Bir dosyanın içeriğini okur ve sana döner. Metin, kod, markdown, PDF desteklenir. "
+            "'şu dosyayı oku', 'bu PDF ne diyor', 'o kod dosyasına bak' gibi isteklerde kullan. "
+            "Yol olarak 'masaüstü/rapor.pdf', '~/Downloads/x.txt' veya tam yol verilebilir."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Dosya yolu — tam yol, takma ad (masaüstü/belgeler) veya find_file'dan gelen yol"},
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "list_directory",
+        "description": (
+            "Bir klasörün içindeki dosya ve klasörleri listeler. "
+            "'masaüstümde ne var', 'indirmeler klasörüne bak', 'şu dizinde neler var' gibi isteklerde kullan."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Klasör yolu — 'masaüstü', 'downloads', 'belgeler' veya tam yol. Boş = masaüstü."},
+            },
+        },
+    },
+    {
         "name": "send_to_device",
         "description": (
-            "Bir dosyayı diğer cihaza (Mac'ten Windows'a veya Windows'tan Mac'e) gönderir. "
-            "Syncthing üzerinden otomatik iletilir, karşı taraftaki Jarvan sesli bildirim yapar. "
-            "Kullanıcı 'şu dosyayı windowsa gönder', 'şu pdf'i macime at' gibi şeyler dediğinde kullan."
+            "Bir dosya veya klasörü diğer cihaza gönderir (Mac→Windows veya Windows→Mac). "
+            "Klasörler otomatik zip'lenir. Syncthing üzerinden iletilir, karşı Jarvan sesli bildirir. "
+            "Kullanıcı 'şu dosyayı windowsa gönder', 'zombi klasörünü macime at' gibi şeyler dediğinde kullan. "
+            "Önce find_file ile dosyayı bul, tam path'i bu tool'a ver."
         ),
         "parameters": {
             "type": "object",
@@ -446,6 +492,9 @@ TOOL_IMPL = {
         auto_login=bool(args.get("auto_login", True)),
         account=args.get("account"),
     ),
+    "find_file": lambda args: find_file(args.get("name", ""), args.get("search_in")),
+    "read_file": lambda args: read_file(args.get("path", "")),
+    "list_directory": lambda args: list_directory(args.get("path", "desktop")),
     "backup_memory": lambda args: backup_memory(),
     "get_backup_status": lambda args: get_backup_status(),
     "send_to_device": lambda args: send_to_device(
