@@ -58,7 +58,6 @@ class LiveSession:
     ):
         self.system_prompt = system_prompt
         self.on_log = on_log
-        self.on_event = on_event
         self.should_stop = should_stop
         self.send_video = send_video
         self.conversation_memory = conversation_memory or []
