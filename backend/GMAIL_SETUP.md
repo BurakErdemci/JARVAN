@@ -21,6 +21,16 @@ GMAIL_TOKEN_PATH=C:\Users\burcu\Downloads\JARVAN-main\backend\token.json
 
 `credentials.json` ve `token.json` repo'ya eklenmez; `.gitignore` içinde kalmalıdır.
 
+## Google Drive (Hafıza Yedeği)
+
+Jarvan her gece 23:00'de hafızayı Drive'a yedekler. Bunun için **aynı** `credentials.json` kullanılır ama Drive API'nin Google Cloud Console'da aktif olması gerekir.
+
+1. [console.cloud.google.com](https://console.cloud.google.com) → Projen → **APIs & Services → Library**
+2. "Google Drive API" → **Enable**
+3. Jarvan'a ilk kez "hafızamı yedekle" dediğinde `token_drive.json` için ayrı bir izin penceresi açılır (tek seferlik, sadece Mac'te).
+
+Yedekler Drive'da `jarvan_backups/` klasöründe saklanır, son 7 gün korunur.
+
 ## Çoklu Hesap
 
 Jarvan iki Gmail hesabını ayrı token dosyalarıyla yönetir:

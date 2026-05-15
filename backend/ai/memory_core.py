@@ -71,12 +71,16 @@ class MemoryCore:
     Anıları ve içgörüleri zaman damgalı olarak vektör tabanında saklar.
     """
     def __init__(self, db_path: str = "./data/chroma"):
-        # Veri klasörünü oluştur
+        # MEMORY_READ_ONLY=1 → Windows gibi ikincil cihazlarda yazma engellenir,
+        # okuma normal PersistentClient üzerinden yapılır (Syncthing sync'ten faydalanır).
+        self._read_only = os.getenv("MEMORY_READ_ONLY", "0") == "1"
+
         if not os.path.exists(db_path):
             os.makedirs(db_path, exist_ok=True)
-            
-        # ChromaDB istemcisini başlat
+
         self.client = chromadb.PersistentClient(path=db_path)
+        if self._read_only:
+            logger.info("[memory] Read-only mod aktif — hafiza yazma devre disi.")
         
         # API anahtarını al
         api_key = os.getenv("GEMINI_API_KEY")
@@ -96,7 +100,11 @@ class MemoryCore:
     def save_insight(self, text: str, type: str = "behavioral") -> str:
         """
         Yeni bir içgörü veya anı kaydeder. Otomatik zaman damgası ekler.
+        Read-only modda (ikincil cihaz) sessizce pas geçer.
         """
+        if self._read_only:
+            logger.debug("[memory] Read-only: save_insight atlandi.")
+            return "read_only"
         now = datetime.now()
         timestamp_str = now.strftime("%Y-%m-%d %H:%M:%S")
         insight_id = f"insight_{now.timestamp()}"
@@ -150,5 +158,8 @@ _memory_instance = None
 def get_memory_core() -> MemoryCore:
     global _memory_instance
     if _memory_instance is None:
-        _memory_instance = MemoryCore()
+        _base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        default = os.path.join(_base, "data", "chroma")
+        db_path = os.getenv("CHROMA_DB_PATH", default)
+        _memory_instance = MemoryCore(db_path=db_path)
     return _memory_instance

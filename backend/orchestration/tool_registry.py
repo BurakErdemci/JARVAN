@@ -10,6 +10,9 @@ from tools.browser import open_url
 from tools.mail import send_mail, check_mail, read_mail_body
 from tools.weather import get_weather
 from tools.developer import create_folder
+from tools.league import launch_league_client
+from tools.memory_backup import backup_memory, get_backup_status
+from tools.device_transfer import send_to_device, get_transfer_status
 
 # ─── Konfigürasyon ──────────────────────────────────────────────────
 
@@ -40,6 +43,74 @@ FUNCTION_DECLARATIONS = [
                 },
             },
             "required": ["name"],
+        },
+    },
+    {
+        "name": "send_to_device",
+        "description": (
+            "Bir dosyayı diğer cihaza (Mac'ten Windows'a veya Windows'tan Mac'e) gönderir. "
+            "Syncthing üzerinden otomatik iletilir, karşı taraftaki Jarvan sesli bildirim yapar. "
+            "Kullanıcı 'şu dosyayı windowsa gönder', 'şu pdf'i macime at' gibi şeyler dediğinde kullan."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "file_path": {
+                    "type": "string",
+                    "description": "Gönderilecek dosyanın tam yolu",
+                },
+                "message": {
+                    "type": "string",
+                    "description": "Dosyayla birlikte iletilecek kısa not (opsiyonel)",
+                },
+                "device": {
+                    "type": "string",
+                    "enum": ["mac", "windows"],
+                    "description": "Hedef cihaz. Belirtilmezse diğer cihaza gönderilir.",
+                },
+            },
+            "required": ["file_path"],
+        },
+    },
+    {
+        "name": "get_transfer_status",
+        "description": "Gelen kutusundaki dosyaları listeler — karşı cihazdan ne gelmiş gösterir.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "backup_memory",
+        "description": (
+            "Jarvan'ın tüm hafızasını (ChromaDB, Obsidian vault, memory.json) Google Drive'a yedekler. "
+            "Kullanıcı 'hafızamı yedekle', 'yedeğimi al', 'backup yap' gibi şeyler dediğinde kullan. "
+            "Sadece Mac'te çalışır (hafıza master cihazı)."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "get_backup_status",
+        "description": "Google Drive'daki mevcut hafıza yedeklerini listeler. Kaç yedek var, en son ne zaman alınmış gösterir.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "launch_league",
+        "description": (
+            "League of Legends'ı açar ve otomatik giriş yapar. "
+            "Kullanıcı 'LoL aç', 'League aç', 'ana hesapla LoL aç', 'ikinci hesapla giriş yap' gibi şeyler dediğinde kullan. "
+            "Hesap belirtilmezse .env'deki varsayılan hesapla giriş yapar. "
+            "KESİNLİKLE `open_app` veya `computer_use` kullanma — bu tool Riot Client'ı tam otomatik açar ve giriş yapar."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "account": {
+                    "type": "string",
+                    "description": "Hangi hesap: 'ana', 'fjkis', '1', 'ikinci', 'katilbronz', '2', 'ucuncu', 'abubakar', '3'. Boş = varsayılan hesap.",
+                },
+                "auto_login": {
+                    "type": "boolean",
+                    "description": "Otomatik giriş yapılsın mı? Default true.",
+                },
+            },
         },
     },
     {
@@ -371,6 +442,18 @@ TOOL_IMPL = {
         account=args.get("account"),
     ),
     "send_whatsapp": lambda args: send_whatsapp(args.get("message", ""), args.get("phone")),
+    "launch_league": lambda args: launch_league_client(
+        auto_login=bool(args.get("auto_login", True)),
+        account=args.get("account"),
+    ),
+    "backup_memory": lambda args: backup_memory(),
+    "get_backup_status": lambda args: get_backup_status(),
+    "send_to_device": lambda args: send_to_device(
+        file_path=args.get("file_path", ""),
+        message=args.get("message", ""),
+        device=args.get("device", "windows" if __import__("platform").system() == "Darwin" else "mac"),
+    ),
+    "get_transfer_status": lambda args: get_transfer_status(),
 }
 
 RESEARCH_HINT = (

@@ -1,15 +1,14 @@
 import os
+import platform
 from ai.obsidian_manager import ObsidianManager
 
-import platform
+# Env var öncelikli, yoksa platform'a göre default
+def _default_vault() -> str:
+    if platform.system() == "Darwin":
+        return "/Users/burakemreerdemci/Documents/JarvanVault/JARVAN"
+    return r"C:\JarvanVault\JARVAN"
 
-# İşletim sistemine göre vault yolunu belirle
-if platform.system() == "Darwin":
-    # Mac yolu
-    DEFAULT_VAULT_PATH = "/Users/burakemreerdemci/Documents/JarvanVault/JARVAN"
-else:
-    # Windows yolu (Kullanıcının belirttiği C kök dizini)
-    DEFAULT_VAULT_PATH = "C:\\JarvanVault\\JARVAN"
+VAULT_PATH = os.getenv("OBSIDIAN_VAULT_PATH", _default_vault())
 
 # Singleton instance
 _manager = None
@@ -17,7 +16,7 @@ _manager = None
 def get_manager():
     global _manager
     if _manager is None:
-        _manager = ObsidianManager(DEFAULT_VAULT_PATH)
+        _manager = ObsidianManager(VAULT_PATH)
     return _manager
 
 def obsidian_manage(action: str, title: str = None, content: str = None, folder: str = None, query: str = None):

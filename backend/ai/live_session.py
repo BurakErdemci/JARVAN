@@ -180,6 +180,24 @@ class LiveSession:
                 notification_queue = asyncio.Queue()
                 set_notification_queue(notification_queue)
 
+                # Dosya transfer bildirimleri için callback bağla
+                from tools.device_transfer import set_incoming_callback
+                async def _on_transfer(path, manifest):
+                    from_dev = manifest.get("from", "diğer cihaz")
+                    fname = manifest.get("file", path.name)
+                    msg_txt = manifest.get("message", "")
+                    size_kb = manifest.get("size_kb", 0)
+                    note = f" Not: {msg_txt}" if msg_txt else ""
+                    await session.send(
+                        input=(
+                            f"[SİSTEM: {from_dev}'dan dosya geldi.]{note}\n"
+                            f"Dosya adı: {fname} ({size_kb} KB). "
+                            f"Kullanıcıya bunu doğal bir şekilde sesli bildir."
+                        ),
+                        end_of_turn=True,
+                    )
+                set_incoming_callback(_on_transfer)
+
                 # Briefing arka planda hazırla — "Uyan" gelince hazır olsun
                 asyncio.create_task(get_briefing_agent().prefetch())
 

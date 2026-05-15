@@ -1,12 +1,30 @@
 import asyncio
+import os
+import platform
+import shutil
 import uuid
 import logging
 from typing import Dict, Any, Optional
 
 logger = logging.getLogger("jarvan.gemini_cli")
 
-GEMINI_BIN = "/opt/homebrew/bin/gemini"
-JARVAN_DIR = "/Users/burakemreerdemci/Documents/JARVAN"
+IS_WIN = platform.system() == "Windows"
+
+# Gemini CLI binary — env var > PATH lookup > platform default
+_cli_env = os.getenv("GEMINI_CLI_PATH", "").strip()
+if _cli_env:
+    GEMINI_BIN = _cli_env
+elif IS_WIN:
+    # npm kurulumu: gemini.cmd PATH'de — tam yol bulunmazsa cmd /c ile çağırılır
+    GEMINI_BIN = shutil.which("gemini.cmd") or shutil.which("gemini") or "gemini"
+else:
+    GEMINI_BIN = shutil.which("gemini") or "/opt/homebrew/bin/gemini"
+
+# Proje kök dizini — env var yoksa bu dosyadan iki seviye yukarı
+JARVAN_DIR = os.getenv(
+    "JARVAN_ROOT",
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
 
 MODEL_FLASH = "gemini-3-flash-preview"      # genel kullanım
 MODEL_PRO   = "gemini-3.1-pro-preview"      # ağır/karmaşık işler
@@ -55,10 +73,14 @@ def get_job_result(job_id: str) -> Dict[str, Any]:
 
 async def _run(job_id: str, prompt: str, model: str) -> None:
     try:
+        # Windows'ta .cmd dosyaları cmd /c üzerinden çalışır
+        if IS_WIN:
+            cmd = ["cmd", "/c", GEMINI_BIN, "--model", model, "--yolo"]
+        else:
+            cmd = [GEMINI_BIN, "--model", model, "--yolo"]
+
         proc = await asyncio.create_subprocess_exec(
-            GEMINI_BIN,
-            "--model", model,
-            "--yolo",
+            *cmd,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,

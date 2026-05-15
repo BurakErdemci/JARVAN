@@ -209,11 +209,42 @@ async def event_pump():
         await manager.broadcast(event.to_dict())
 
 
+async def _backup_scheduler():
+    """Her gece 23:00'de hafızayı Google Drive'a yedekler (sadece Mac)."""
+    import platform
+    if platform.system() != "Darwin":
+        return
+    from datetime import datetime
+    from tools.memory_backup import backup_memory
+
+    last_backup_date = None
+    while True:
+        await asyncio.sleep(60)
+        now = datetime.now()
+        today = now.date()
+        if now.hour == 23 and now.minute == 0 and last_backup_date != today:
+            last_backup_date = today
+            try:
+                result = await asyncio.to_thread(backup_memory)
+                if result.get("ok"):
+                    print(f"[backup] Basarili: {result.get('result')}", flush=True)
+                else:
+                    print(f"[backup] Hata: {result.get('error')}", flush=True)
+            except Exception as e:
+                print(f"[backup] Beklenmedik hata: {e}", flush=True)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from tools.device_transfer import start_watcher, stop_watcher
     task = asyncio.create_task(event_pump())
+    backup_task = asyncio.create_task(_backup_scheduler())
+    loop = asyncio.get_event_loop()
+    start_watcher(loop)
     yield
     task.cancel()
+    backup_task.cancel()
+    stop_watcher()
     pipeline.stop()
 
 
