@@ -79,7 +79,6 @@ def _find_user_playlist(sp: spotipy.Spotify, query: str) -> dict | None:
             break
     return None
 
-
 async def play_spotify_track(
     track: str | None = None,
     artist: str | None = None,

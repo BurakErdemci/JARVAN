@@ -58,6 +58,7 @@ class LiveSession:
     ):
         self.system_prompt = system_prompt
         self.on_log = on_log
+        self.on_event = on_event
         self.should_stop = should_stop
         self.send_video = send_video
         self.conversation_memory = conversation_memory or []
@@ -273,12 +274,12 @@ class LiveSession:
 
                 # --- Lag Monitoring ---
                 loop_end = time.monotonic()
-                if loop_end - loop_start > 0.05:  # 50ms'den fazla sürerse uyar
-                    print(f"[Jarvan] LAG UYARISI: Transmit loop yavaşladı! ({loop_end - loop_start:.3f}s)")
-
-                await session.send_realtime_input(
+                
+                # Sesi gönderirken mic döngüsünü (PyAudio buffer) bloklamamak için asenkron task kullanıyoruz
+                # Böylece ses girişinde veya çıkışında takılma (kayma) engellenir.
+                asyncio.create_task(session.send_realtime_input(
                     audio=types.Blob(data=data, mime_type=f"audio/pcm;rate={INPUT_SAMPLE_RATE}")
-                )
+                ))
         except asyncio.CancelledError:
             pass
         except Exception as e:
