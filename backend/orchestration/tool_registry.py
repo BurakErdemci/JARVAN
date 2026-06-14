@@ -479,7 +479,9 @@ TOOL_IMPL = {
 RESEARCH_HINT = (
     "\n\n[ARAŞTIRMA VE ANALİZ STRATEJİSİ]\n"
     "1. ÖNCE HAFIZA: Herhangi bir şeyi araştırmadan önce 'Daha önce bu konuda bir not almış mıyım?' diye düşün. `obsidian_manage(action='search')` kullan.\n"
-    "2. Web araması veya çok adımlı tarayıcı işi için `start_gemini_task` kullan — Gemini CLI Playwright ile tarayıcıyı tam kontrol eder.\n"
+    "2. Haber, güncel olay, fiyat gibi GERÇEK ZAMANLI bilgi için `start_gemini_task` kullan.\n"
+    "   ZORUNLU: Promptta mutlaka spesifik site URL'i ver (ign.com, polygon.com, techcrunch.com vb.)\n"
+    "   ve 'Playwright ile şu siteye git, sayfayı oku' talimatı yaz. URL vermeden 'haber ara' deme — model uydurur.\n"
     "3. Kodlama, refactor veya uzun analiz için `start_gemini_task` kullan. Sonucu `get_gemini_result` ile al.\n"
     "4. ARŞİVLEME: Önemli sonuçları `obsidian_manage(action='create')` ile kaydet.\n"
     "\n[ARAŞTIRMA SONUCU GELDİĞİNDE — ZORUNLU KURAL]\n"

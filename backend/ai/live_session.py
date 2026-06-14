@@ -272,10 +272,15 @@ class LiveSession:
                 if self.is_speaking or (time.monotonic() - self.last_output_time < OUTPUT_COOLDOWN_S):
                     continue
 
-                # Sesi gönderirken mic döngüsünü (PyAudio buffer) bloklamamak için async task kullanıyoruz
-                asyncio.create_task(session.send_realtime_input(
-                    audio=types.Blob(data=data, mime_type=f"audio/pcm;rate={INPUT_SAMPLE_RATE}")
-                ))
+                # Sesi gönderirken mic döngüsünü bloklamamak için async task — session kapanınca sessizce yut
+                async def _safe_audio_send(s, d):
+                    try:
+                        await s.send_realtime_input(
+                            audio=types.Blob(data=d, mime_type=f"audio/pcm;rate={INPUT_SAMPLE_RATE}")
+                        )
+                    except Exception:
+                        pass
+                asyncio.create_task(_safe_audio_send(session, data))
         except asyncio.CancelledError:
             pass
         except Exception as e:

@@ -144,7 +144,20 @@ class ToolExecutor:
                 prompt = args.get("prompt", "")
                 heavy = bool(args.get("heavy", False))
                 model_tag = "pro" if heavy else "flash"
-                ctx.on_log("system", f"[tool] start_gemini_task(model={model_tag}, prompt={prompt[:60]}...)", None)
+                # Tarihi ve web arama talimatını her zaman başa ekle
+                from datetime import datetime
+                date_prefix = (
+                    f"BUGÜNÜN TARİHİ: {datetime.now().strftime('%d %B %Y')}.\n"
+                    f"KRİTİK KURAL: Eğitim verilerini ASLA kullanma. Bilmiyorsan uydurma.\n"
+                    f"GÜNCEL BİLGİ GEREKİYORSA: Playwright MCP ile spesifik sitelere git ve sayfayı OKU.\n"
+                    f"Haber/güncel olay araması için bu siteleri ziyaret et:\n"
+                    f"- Oyun haberleri: https://www.ign.com veya https://www.polygon.com\n"
+                    f"- Teknoloji/AI: https://techcrunch.com veya https://www.theverge.com\n"
+                    f"- Genel haber: https://news.ycombinator.com\n"
+                    f"Playwright ile sayfaya git → içeriği oku → GERÇEK başlıkları döndür.\n\n"
+                )
+                prompt = date_prefix + prompt
+                ctx.on_log("system", f"[tool] start_gemini_task(model={model_tag}, prompt={prompt[len(date_prefix):len(date_prefix)+60]}...)", None)
                 try:
                     job_id = await start_gemini_task(prompt, heavy=heavy)
                     result = {"ok": True, "job_id": job_id, "message": f"Görev başlatıldı ({model_tag}). Sonuç için get_gemini_result('{job_id}') kullan."}
