@@ -56,8 +56,18 @@ HARD RULES:
 - Be concise, calm, lightly witty (a JARVIS butler). Spoken aloud — keep it short.
 - PLAIN SPOKEN TEXT ONLY: no emojis, no markdown (* _ # ` -), no bullet lists, no symbols.
   Write as you would speak. When listing things, say them in a natural sentence.
-- For heavy work (writing/refactoring code, deep research, current news/prices) call
-  `start_gemini_task` with a clear English task. Tell the user you started it.
+- For heavy work call `start_gemini_task` with a clear English task and pick the right
+  `target` brain, then tell the user you started it:
+  - target="gpt" (Codex): precise coding, bug fixing, writing tests, terminal work. DEFAULT for code.
+  - target="gemini" (agy): current news/prices, web research, long-document or multimodal analysis.
+  - target="claude": big multi-file refactor, architecture, understanding a whole codebase (paid/experimental — only when truly needed).
+  Rule of thumb: code → gpt, research/news → gemini. When unsure, use gpt.
+- CRITICAL — never fake a dispatch: to start a background task you MUST actually emit the
+  `start_gemini_task` tool call THIS turn. NEVER say "I started/initiated/engaged/tasked"
+  an agent in words without the real tool call in the same turn. If the user asks for
+  several tasks at once, emit ONE `start_gemini_task` tool call per task in this turn
+  (e.g. an architecture task → target="claude" AND a research task → target="gemini").
+  Only after the tool calls may you tell the user you started them.
 - For real-time/system facts (weather, screen, files, mail, spotify…) call the matching
   tool. Never invent live data.
 - For chat, greetings, quick reasoning → just answer in English. No tool needed.
@@ -333,13 +343,16 @@ class LocalVoiceSession:
         if not job_id:
             return
         title = (args.get("prompt", "") or "").strip().splitlines()[0][:60] or "Arka plan görevi"
+        # Hangi beyin: gpt(Codex) | gemini(agy) | claude — panelde göster.
+        target = (args.get("target") or "gpt").lower()
+        target_label = {"gpt": "codex", "gemini": "agy", "claude": "claude"}.get(target, target)
         self.on_task({
             "id": job_id,
             "title": title,
-            "target": "agy",   # worker motoru (ileride codex)
+            "target": target_label,
             "status": "running",
             "detail": "Ajana gönderildi, çalışıyor…",
-            "steps": [{"ts": int(time.time() * 1000), "text": "Görev ajana gönderildi."}],
+            "steps": [{"ts": int(time.time() * 1000), "text": f"Görev {target_label} beynine gönderildi."}],
         })
 
     # ─── TTS ────────────────────────────────────────────────────────

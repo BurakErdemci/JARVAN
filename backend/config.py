@@ -1,7 +1,25 @@
 import os
+import platform
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# ─── Platform tespiti (Mac/Windows donanım varsayımlarını ayırmak için) ──
+_IS_MAC = platform.system() == "Darwin"
+_IS_WINDOWS = platform.system() == "Windows"
+
+
+def _default_vram_gb() -> str:
+    """Telemetri VRAM bar'ı için makul toplam (GB). Mac'te discrete GPU yok —
+    Apple Silicon unified memory'den Metal'in ayırdığı bütçe ~%70. Windows'ta
+    RX 6750 XT = 12GB. .env'de GPU_VRAM_GB verilirse bu yok sayılır."""
+    if _IS_MAC:
+        try:
+            import psutil
+            return str(round(psutil.virtual_memory().total / 1e9 * 0.7))
+        except Exception:
+            return "11"  # 16GB Mac default Metal bütçesi
+    return "12"  # RX 6750 XT
 
 # Gemini
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
@@ -33,11 +51,15 @@ AUDIO_SAMPLE_RATE    = 16000   # Whisper ve Silero 16kHz bekliyor
 AUDIO_CHUNK_MS       = 32      # Silero 16kHz için tam 512 sample ister (32ms)
 AUDIO_CHANNELS       = 1       # Mono
 
-# Screen — hangi monitör: 1 = ilk, 2 = ikinci (0 = tüm ekranlar)
-SCREEN_MONITOR_INDEX = 2
+# Screen — hangi monitör: 1 = ilk, 2 = ikinci (0 = tüm ekranlar). Env'den ayarlanır.
+# Default 2: Burak'ın Windows çift-monitör kurulumu. capture.py guard'lı — tek ekranlı
+# Mac'te 2 mevcut değilse otomatik 1'e (primary) düşer, patlamaz. Harici ekranlı Mac'te
+# 2 = harici ekran. MacBook tek ekran kullanıyorsan .env'de SCREEN_MONITOR_INDEX=1 yap.
+SCREEN_MONITOR_INDEX = int(os.getenv("SCREEN_MONITOR_INDEX", "2"))
 
-# GPU VRAM toplamı (GB) — telemetri panelinde VRAM bar'ı için. RX 6750 XT = 12GB.
-GPU_VRAM_GB = float(os.getenv("GPU_VRAM_GB", "12"))
+# GPU VRAM toplamı (GB) — telemetri panelinde VRAM bar'ı için.
+# Otomatik: Windows → 12 (RX 6750 XT), Mac → unified memory'nin ~%70'i.
+GPU_VRAM_GB = float(os.getenv("GPU_VRAM_GB", _default_vram_gb()))
 
 # Whisper (STT — faster-whisper, gömülü).
 # 'small': CPU'da hızlı (~2-3s) + ~0.5GB RAM — 16GB makine + "hız önemli" için ideal.
@@ -45,8 +67,9 @@ GPU_VRAM_GB = float(os.getenv("GPU_VRAM_GB", "12"))
 WHISPER_MODEL_SIZE   = os.getenv("WHISPER_MODEL_SIZE", "small")
 WHISPER_DEVICE       = os.getenv("WHISPER_DEVICE", "cpu")   # AMD GPU → CUDA yok, CPU
 WHISPER_COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "int8")
-# CTranslate2 CPU thread sayısı. 0 = otomatik (fiziksel çekirdek). Ryzen 5 7500F = 6 çekirdek.
-WHISPER_CPU_THREADS  = int(os.getenv("WHISPER_CPU_THREADS", "6"))
+# CTranslate2 CPU thread sayısı. 0 = otomatik (fiziksel çekirdek sayısını seçer).
+# Default 0 → her makinede uyumlu (Ryzen 5 7500F'te 6, M4'te 8-10 çekirdek otomatik).
+WHISPER_CPU_THREADS  = int(os.getenv("WHISPER_CPU_THREADS", "0"))
 
 # ─── Sesli endpointing (cümle bitti mi?) ────────────────────────────
 # Konuştuktan sonra bu kadar sessizlik → cümle bitti say. ÇOK düşükse cümle ortası

@@ -17,7 +17,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from tools.computer_use import run_computer_task
 from tools.calculator import run_calculator_task
 from tools.developer import save_report, create_project_file, create_folder
-from workers.gemini_cli_worker import start_gemini_task, get_job_result
+from workers.gemini_cli_worker import dispatch_task, get_job_result
 from tools.obsidian import obsidian_manage
 from ai.insight_agent import get_insight_agent
 
@@ -141,24 +141,27 @@ class ToolExecutor:
         elif name == "start_gemini_task":
             prompt = args.get("prompt", "")
             heavy = bool(args.get("heavy", False))
-            model_tag = "pro" if heavy else "flash"
-            # Tarihi ve web arama talimatını her zaman başa ekle
-            from datetime import datetime
-            date_prefix = (
-                f"BUGÜNÜN TARİHİ: {datetime.now().strftime('%d %B %Y')}.\n"
-                f"KRİTİK KURAL: Eğitim verilerini ASLA kullanma. Bilmiyorsan uydurma.\n"
-                f"GÜNCEL BİLGİ GEREKİYORSA: Playwright MCP ile spesifik sitelere git ve sayfayı OKU.\n"
-                f"Haber/güncel olay araması için bu siteleri ziyaret et:\n"
-                f"- Oyun haberleri: https://www.ign.com veya https://www.polygon.com\n"
-                f"- Teknoloji/AI: https://techcrunch.com veya https://www.theverge.com\n"
-                f"- Genel haber: https://news.ycombinator.com\n"
-                f"Playwright ile sayfaya git → içeriği oku → GERÇEK başlıkları döndür.\n\n"
-            )
-            prompt = date_prefix + prompt
-            ctx.on_log("system", f"[tool] start_gemini_task(model={model_tag}, prompt={prompt[len(date_prefix):len(date_prefix)+60]}...)", None)
+            target = (args.get("target") or "").lower()  # gpt | gemini | claude (boş → worker default)
+            # Araştırma/güncel-bilgi prefix'i SADECE gemini (agy) hedefine: Playwright ile
+            # web'e çıkar. gpt(codex)/claude kod hedefleri ham task alır (web prefix'i kafa karıştırır).
+            raw = prompt
+            if target in ("", "gemini"):
+                from datetime import datetime
+                date_prefix = (
+                    f"BUGÜNÜN TARİHİ: {datetime.now().strftime('%d %B %Y')}.\n"
+                    f"KRİTİK KURAL: Eğitim verilerini ASLA kullanma. Bilmiyorsan uydurma.\n"
+                    f"GÜNCEL BİLGİ GEREKİYORSA: Playwright MCP ile spesifik sitelere git ve sayfayı OKU.\n"
+                    f"Haber/güncel olay araması için bu siteleri ziyaret et:\n"
+                    f"- Oyun haberleri: https://www.ign.com veya https://www.polygon.com\n"
+                    f"- Teknoloji/AI: https://techcrunch.com veya https://www.theverge.com\n"
+                    f"- Genel haber: https://news.ycombinator.com\n"
+                    f"Playwright ile sayfaya git → içeriği oku → GERÇEK başlıkları döndür.\n\n"
+                )
+                prompt = date_prefix + prompt
+            ctx.on_log("system", f"[tool] dispatch(target={target or 'default'}, heavy={heavy}, task={raw[:60]}...)", None)
             try:
-                job_id = await start_gemini_task(prompt, heavy=heavy)
-                result = {"ok": True, "job_id": job_id, "message": f"Görev başlatıldı ({model_tag}). Sonuç için get_gemini_result('{job_id}') kullan."}
+                job_id = await dispatch_task(prompt, target=target, heavy=heavy)
+                result = {"ok": True, "job_id": job_id, "message": f"Görev başlatıldı ({target or 'default'}). Sonuç için get_gemini_result('{job_id}') kullan."}
             except Exception as e:
                 result = {"ok": False, "error": str(e)}
             ctx.on_log("system", f"[tool sonuç] {result}", None)

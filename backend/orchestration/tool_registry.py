@@ -384,20 +384,28 @@ FUNCTION_DECLARATIONS = [
     {
         "name": "start_gemini_task",
         "description": (
-            "Antigravity CLI (agy)'yi arka planda başlatır ve kod yazma, refactor, analiz gibi uzun süren geliştirme görevlerini yapar. "
-            "Görev bitince job_id ile sonucu almak için get_gemini_result kullan. "
-            "Kullanıcı 'şu kodu yaz', 'bunu refactor et', 'proje analizi yap' gibi şeyler istediğinde bu aracı kullan."
+            "Ağır işi bir arka plan CLI beynine paslar (kod yazma, refactor, derin analiz, araştırma). "
+            "Anında job_id döner; sonucu get_gemini_result ile al. `target` ile doğru beyni seç:\n"
+            "- target='gpt' (Codex/GPT): hassas kod, bug çözme, test yazma, terminal işi. VARSAYILAN tercih.\n"
+            "- target='gemini' (agy): güncel haber/fiyat, web araştırması, uzun doküman/multimodal analiz.\n"
+            "- target='claude' (Claude Code): büyük çok-dosyalı refactor, mimari, tüm projeyi anlama (ücretli/deneysel — sadece gerçekten gerekince).\n"
+            "Emin değilsen: kod→gpt, araştırma/haber→gemini."
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "prompt": {
                     "type": "string",
-                    "description": "agy CLI'ye verilecek görev açıklaması. Ne yapılması gerektiğini detaylı yaz."
+                    "description": "CLI beynine verilecek görev açıklaması. İngilizce ve detaylı yaz; ne yapılacağını net belirt."
+                },
+                "target": {
+                    "type": "string",
+                    "enum": ["gpt", "gemini", "claude"],
+                    "description": "Hangi beyin: gpt=kod/mühendislik (Codex), gemini=araştırma/güncel/web (agy), claude=büyük refactor/mimari. Boş → gpt."
                 },
                 "heavy": {
                     "type": "boolean",
-                    "description": "true → Gemini 3.1 Pro (High) (büyük refactor, derin analiz). false veya boş → Gemini 3.5 Flash (Medium) (genel kod, hızlı işler)."
+                    "description": "Sadece target=gemini için: true → Gemini Pro (büyük/derin), false → Flash (hızlı). Diğer hedeflerde önemsiz."
                 }
             },
             "required": ["prompt"]
