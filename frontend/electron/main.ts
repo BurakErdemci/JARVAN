@@ -22,13 +22,13 @@ function resolvePythonExecutable(): string {
   const isWin = process.platform === "win32";
   const candidates = isWin
     ? [
-        path.join(PROJECT_ROOT, ".venv", "Scripts", "python.exe"),
-        path.join(PROJECT_ROOT, "backend", ".venv", "Scripts", "python.exe"),
-      ]
+      path.join(PROJECT_ROOT, ".venv", "Scripts", "python.exe"),
+      path.join(PROJECT_ROOT, "backend", ".venv", "Scripts", "python.exe"),
+    ]
     : [
-        path.join(PROJECT_ROOT, ".venv", "bin", "python"),
-        path.join(PROJECT_ROOT, "backend", ".venv", "bin", "python"),
-      ];
+      path.join(PROJECT_ROOT, ".venv", "bin", "python"),
+      path.join(PROJECT_ROOT, "backend", ".venv", "bin", "python"),
+    ];
   for (const p of candidates) {
     if (fs.existsSync(p)) return p;
   }
@@ -147,7 +147,10 @@ function createTray() {
 
 ipcMain.on("window:minimize", () => win?.minimize());
 ipcMain.on("window:hide", () => win?.hide());
-ipcMain.on("window:close", () => win?.hide());
+ipcMain.on("window:close", () => {
+  quitting = true;
+  app.quit();
+});
 ipcMain.handle("window:toggle-always-on-top", () => {
   if (!win) return false;
   const next = !win.isAlwaysOnTop();

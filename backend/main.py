@@ -21,6 +21,23 @@ import queue
 from contextlib import asynccontextmanager
 from typing import Optional
 
+# macOS/Linux yetim süreç (orphan process) koruması:
+# Eğer ana süreç (Electron) beklenmedik şekilde kapanırsa (Ctrl+C veya çökme),
+# yetim kalan bu Python backend sürecini (ve dolayısıyla portu) otomatik kapatmak için ppid izleyici.
+def _watch_parent():
+    import time
+    while True:
+        time.sleep(2)
+        try:
+            if sys.platform != "win32" and os.getppid() == 1:
+                # Parent process öldü, launchd (ppid=1) sahiplendi.
+                # os._exit kullanarak tüm thread'lerle birlikte anında çıkalım.
+                os._exit(0)
+        except Exception:
+            pass
+
+threading.Thread(target=_watch_parent, daemon=True).start()
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
