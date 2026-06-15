@@ -36,8 +36,57 @@ AUDIO_CHANNELS       = 1       # Mono
 # Screen — hangi monitör: 1 = ilk, 2 = ikinci (0 = tüm ekranlar)
 SCREEN_MONITOR_INDEX = 2
 
-# Whisper
-WHISPER_MODEL_SIZE   = "small"
-WHISPER_DEVICE       = "cpu"
-WHISPER_COMPUTE_TYPE = "int8"
-WHISPER_LANGUAGE     = "tr"
+# GPU VRAM toplamı (GB) — telemetri panelinde VRAM bar'ı için. RX 6750 XT = 12GB.
+GPU_VRAM_GB = float(os.getenv("GPU_VRAM_GB", "12"))
+
+# Whisper (STT — faster-whisper, gömülü).
+# 'small': CPU'da hızlı (~2-3s) + ~0.5GB RAM — 16GB makine + "hız önemli" için ideal.
+# large-v3-turbo CPU'da 8-12s + ~2GB (çok ağır). Türkçe doğruluk az gelirse → 'medium'.
+WHISPER_MODEL_SIZE   = os.getenv("WHISPER_MODEL_SIZE", "small")
+WHISPER_DEVICE       = os.getenv("WHISPER_DEVICE", "cpu")   # AMD GPU → CUDA yok, CPU
+WHISPER_COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "int8")
+# CTranslate2 CPU thread sayısı. 0 = otomatik (fiziksel çekirdek). Ryzen 5 7500F = 6 çekirdek.
+WHISPER_CPU_THREADS  = int(os.getenv("WHISPER_CPU_THREADS", "6"))
+
+# ─── Sesli endpointing (cümle bitti mi?) ────────────────────────────
+# Konuştuktan sonra bu kadar sessizlik → cümle bitti say. ÇOK düşükse cümle ortası
+# duraksamada keser ("gördüğün bütün ... toolları" → "...tuğ"). 1000ms doğal duraksamaya
+# tolerans verir; çok yüksekse tur sonu gecikir. Mic'ine göre .env'den ayarla.
+VOICE_SILENCE_MS = int(os.getenv("VOICE_SILENCE_MS", "1000"))
+# int16 RMS eşiği — üstü "konuşma". Düşürürsen yumuşak heceleri de yakalar ama
+# gürültüyü konuşma sanabilir. Sessiz mic'te düşür, gürültülü ortamda yükselt.
+VOICE_RMS_GATE   = int(os.getenv("VOICE_RMS_GATE", "300"))
+# "tr" sabit — kısa kliplerde otomatik dil algılama yanlış dile düşüp saçmalıyor.
+# Sen Türkçe konuşuyorsun, çıkış zaten Gemma'dan İngilizce. EN'e geçmek istersen "en".
+WHISPER_LANGUAGE     = os.getenv("WHISPER_LANGUAGE", "tr")
+
+# ─── Local Voice Brain (Gemma via Ollama) ───────────────────────────────
+# NOT: 'localhost' DEĞİL '127.0.0.1' — Windows'ta localhost önce IPv6 (::1) deneyip
+# ~2s timeout sonra IPv4'e düşüyor (her çağrıya +~2.2s). Ölçüldü: 2.74s → 0.47s.
+# ─── Wake word (Vosk) ───────────────────────────────────────────────────
+# "wake up" İngilizce → İngilizce Vosk modeli şart (vosk-tr İngilizceyi tanımaz).
+# models/vosk-en-small'a vosk-model-small-en-us-0.15 çıkarılmalı. TR'ye dönmek için
+# WAKE_WORD=uyan + VOSK_MODEL_PATH=models/vosk-tr.
+WAKE_WORD       = os.getenv("WAKE_WORD", "wake up").lower()
+VOSK_MODEL_PATH = os.getenv("VOSK_MODEL_PATH", "models/vosk-en-small")
+
+OLLAMA_URL  = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
+GEMMA_MODEL = os.getenv("GEMMA_MODEL", "gemma4:12b")
+# gemma4 reasoning modeli — santral/hafif-cevap rolünde düşünme gereksiz (~4-5s ekler).
+GEMMA_THINK = os.getenv("GEMMA_THINK", "0") == "1"
+# Context penceresi. Ollama default 4096; 27 tool şeması bunu doldurup üretime yer
+# bırakmıyor (done_reason=length, eval=1). 8192 → tool'lar + cevap rahat sığar.
+# (Ölçüldü: ctx=4096 ile 27 tool kırık; ctx=8192 ile tool_call + cevap düzgün.)
+GEMMA_NUM_CTX = int(os.getenv("GEMMA_NUM_CTX", "8192"))
+# Uyku modunda Gemma'yı Ollama'dan boşalt (RAM/VRAM serbest). Uyanınca yeniden yüklenir
+# (greeting Kokoro'dan anında çalarak yükleme gecikmesini gizler). 7/24 idle RAM için.
+UNLOAD_ON_SLEEP = os.getenv("UNLOAD_ON_SLEEP", "1") == "1"
+
+# ─── Local Voice Output (TTS — Kokoro ONNX, gömülü) ──────────────────────
+# Jarvan TR+EN anlar ama HER ZAMAN İngilizce konuşur (İngilizce TTS sesleri çok daha iyi).
+_KOKORO_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "kokoro")
+KOKORO_MODEL_PATH  = os.getenv("KOKORO_MODEL_PATH",  os.path.join(_KOKORO_DIR, "kokoro-v1.0.onnx"))
+KOKORO_VOICES_PATH = os.getenv("KOKORO_VOICES_PATH", os.path.join(_KOKORO_DIR, "voices-v1.0.bin"))
+KOKORO_VOICE       = os.getenv("KOKORO_VOICE", "bm_george")   # British male (Burak onayladı)
+KOKORO_LANG        = os.getenv("KOKORO_LANG", "en-us")
+KOKORO_SPEED       = float(os.getenv("KOKORO_SPEED", "1.0"))

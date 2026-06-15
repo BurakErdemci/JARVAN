@@ -26,7 +26,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from config import AUDIO_SAMPLE_RATE, AUDIO_CHANNELS, AUDIO_CHUNK_MS
+from config import AUDIO_SAMPLE_RATE, AUDIO_CHANNELS, AUDIO_CHUNK_MS, VOSK_MODEL_PATH, WAKE_WORD, GPU_VRAM_GB
 from modes.detector import get_active_mode
 
 CHUNK = int(AUDIO_SAMPLE_RATE * AUDIO_CHUNK_MS / 1000)
@@ -51,27 +51,53 @@ class Pipeline:
         self.running = False
         self.live_enabled = True
         self.proactive_enabled = False
+        self.muted = False
         self.conversation_memory: list[dict] = []
+        # Local voice oturumu + onun event loop'u (text enjeksiyonu için cross-thread)
+        self.voice_session = None
+        self.voice_loop = None
 
     def emit(self, type: str, **data):
         self.q.put(PipelineEvent(type, **data))
+
+    def _status(self):
+        self.emit("status", running=self.running, live=self.live_enabled,
+                  proactive=self.proactive_enabled, muted=self.muted)
+
+    def set_mute(self, enabled: bool):
+        """WS {type:'mute'} → mikrofonu sustur/aç. Voice loop is_muted() ile okur."""
+        self.muted = enabled
+        self.emit("log", level="system", text="Mikrofon susturuldu." if enabled else "Mikrofon aktif.")
+        self._status()
+
+    def send_text(self, text: str):
+        """WS {type:'text'} → chatbox komutunu çalışan oturuma enjekte et."""
+        text = (text or "").strip()
+        if not text:
+            return
+        sess, loop = self.voice_session, self.voice_loop
+        if sess is None or loop is None:
+            self.emit("log", level="error", text="Local ses oturumu henüz hazır değil.")
+            return
+        import asyncio as _asyncio
+        _asyncio.run_coroutine_threadsafe(sess._respond(text), loop)
 
     def start(self):
         if self.running:
             return
             
-        # Vosk Model Check
-        model_p = os.path.join(os.path.dirname(__file__), "models", "vosk-tr")
+        # Vosk Model Check (config'deki wake word modeli)
+        model_p = VOSK_MODEL_PATH if os.path.isabs(VOSK_MODEL_PATH) else os.path.join(os.path.dirname(__file__), VOSK_MODEL_PATH)
         if not os.path.exists(model_p):
-            self.emit("log", level="error", text="⚠️ Vosk modeli (vosk-tr) bulunamadı! Yerel uyandırma 'Uyan Jarvan' çalışmayabilir.")
+            self.emit("log", level="error", text=f"⚠️ Vosk modeli bulunamadı ({VOSK_MODEL_PATH})! '{WAKE_WORD}' uyandırma çalışmaz — sürekli dinleme moduna düşülür.")
         else:
-            self.emit("log", level="system", text="✅ Wake Word (Yerel Dinleme) sistemi hazır.")
+            self.emit("log", level="system", text=f"✅ Wake Word hazır ('{WAKE_WORD}').")
 
         self.stop_flag.clear()
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
         self.running = True
-        self.emit("status", running=True, live=self.live_enabled, proactive=self.proactive_enabled)
+        self._status()
 
     def stop(self):
         if not self.running:
@@ -80,7 +106,7 @@ class Pipeline:
         if self.thread:
             self.thread.join(timeout=5)
         self.running = False
-        self.emit("status", running=False, live=self.live_enabled, proactive=self.proactive_enabled)
+        self._status()
 
 
     def set_proactive(self, enabled: bool):
@@ -92,7 +118,7 @@ class Pipeline:
             self.stop()
             self.start()
         else:
-            self.emit("status", running=self.running, live=self.live_enabled, proactive=enabled)
+            self._status()
             self.emit("log", level="system", text=f"Proaktif yorum {'açık' if enabled else 'kapalı'}")
 
     def set_live(self, enabled: bool):
@@ -104,7 +130,7 @@ class Pipeline:
             self.stop()
             if enabled:
                 self.start()
-        self.emit("status", running=self.running, live=self.live_enabled, proactive=self.proactive_enabled)
+        self._status()
 
     def _emit_log(self, level: str, text: str, provider: str | None = None):
         if level in ("user", "jarvan"):
@@ -118,6 +144,10 @@ class Pipeline:
         else:
             self.emit("log", level=level, text=text)
 
+    def _emit_task(self, task: dict):
+        """Local voice → task paneli (WS {type:'task', task:{...}})."""
+        self.emit("task", task=task)
+
     def _run(self):
         if self.live_enabled:
             self._run_live()
@@ -125,9 +155,10 @@ class Pipeline:
             self.emit("log", level="system", text="Live kapalı. Pipeline başlatılmadı.")
 
     def _run_live(self):
+        """Local sesli döngü (Gemma + Whisper + Kokoro). Gemini Live'ın yerini aldı."""
         import asyncio
         import time
-        from ai.live_session import LiveSession
+        from ai.local_voice import LocalVoiceSession
 
         MAX_RETRIES = 5
         retries = 0
@@ -136,19 +167,33 @@ class Pipeline:
             self.emit("mode", name=mode_name)
 
             while not self.stop_flag.is_set():
-                session = LiveSession(
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                session = LocalVoiceSession(
                     system_prompt=system_prompt,
                     on_log=self._emit_log,
                     should_stop=self.stop_flag.is_set,
                     send_video=self.proactive_enabled,
                     conversation_memory=self.conversation_memory,
+                    is_muted=lambda: self.muted,
+                    on_task=self._emit_task,
                 )
+                # send_text (chatbox) bu oturuma cross-thread enjeksiyon yapsın
+                self.voice_session = session
+                self.voice_loop = loop
 
                 start_ts = time.monotonic()
                 try:
-                    asyncio.run(session.run())
+                    loop.run_until_complete(session.run())
                 except Exception as e:
-                    self.emit("log", level="error", text=f"Live pipeline hatası: {e}")
+                    self.emit("log", level="error", text=f"Local ses pipeline hatası: {e}")
+                finally:
+                    self.voice_session = None
+                    self.voice_loop = None
+                    try:
+                        loop.close()
+                    except Exception:
+                        pass
 
                 if self.stop_flag.is_set():
                     break
@@ -156,16 +201,14 @@ class Pipeline:
                 ran_for = time.monotonic() - start_ts
                 if ran_for > 30:
                     retries = 0
-
                 retries += 1
                 if retries > MAX_RETRIES:
-                    self.emit("log", level="error", text=f"Live {MAX_RETRIES} kez üst üste çöktü — otomatik yeniden bağlanma durduruldu.")
+                    self.emit("log", level="error", text=f"Local ses {MAX_RETRIES} kez üst üste çöktü — durduruldu.")
                     break
-
-                self.emit("log", level="system", text=f"Live bağlantısı koptu, {retries}. yeniden bağlanma (hafıza korundu)...")
+                self.emit("log", level="system", text=f"Local ses döngüsü koptu, {retries}. yeniden başlatma...")
                 time.sleep(min(2 * retries, 8))
         finally:
-            self.emit("log", level="system", text="Live oturum kapandı.")
+            self.emit("log", level="system", text="Local ses oturumu kapandı.")
 
 
 
@@ -207,6 +250,46 @@ async def event_pump():
         if event is None:
             continue
         await manager.broadcast(event.to_dict())
+
+
+def _gather_metrics() -> dict:
+    """Gerçek sistem metrikleri (psutil + Ollama VRAM). Bloklamayan — to_thread'de çağrılır."""
+    import psutil
+    cpu = psutil.cpu_percent(interval=None)  # son çağrıdan beri (prime edilmiş)
+    vm = psutil.virtual_memory()
+    vram_used = 0.0
+    model_loaded = False
+    try:
+        import httpx
+        r = httpx.get("http://127.0.0.1:11434/api/ps", timeout=1.0)
+        models = r.json().get("models", [])
+        if models:
+            model_loaded = True
+            vram_used = sum(m.get("size_vram", 0) for m in models) / 1e9
+    except Exception:
+        pass
+    return {
+        "cpu": round(cpu, 1),
+        "ram_used": round(vm.used / 1e9, 1),
+        "ram_total": round(vm.total / 1e9, 1),
+        "ram_pct": round(vm.percent, 1),
+        "vram_used": round(vram_used, 1),
+        "vram_total": float(GPU_VRAM_GB),
+        "model_loaded": model_loaded,
+    }
+
+
+async def _metrics_loop():
+    """Her 2sn'de bir gerçek sistem metriklerini WS'e yayınlar (SystemDiagnostics okur)."""
+    import psutil
+    psutil.cpu_percent()  # prime (ilk çağrı 0 döner)
+    while True:
+        await asyncio.sleep(2)
+        try:
+            m = await asyncio.to_thread(_gather_metrics)
+            await manager.broadcast({"type": "metrics", **m})
+        except Exception:
+            pass
 
 
 async def _nightly_scheduler():
@@ -259,11 +342,13 @@ async def lifespan(app: FastAPI):
     from tools.device_transfer import start_watcher, stop_watcher
     task = asyncio.create_task(event_pump())
     backup_task = asyncio.create_task(_nightly_scheduler())
+    metrics_task = asyncio.create_task(_metrics_loop())
     loop = asyncio.get_event_loop()
     start_watcher(loop)
     yield
     task.cancel()
     backup_task.cancel()
+    metrics_task.cancel()
     stop_watcher()
     pipeline.stop()
 
@@ -291,6 +376,7 @@ async def ws_endpoint(ws: WebSocket):
             "running": pipeline.running,
             "live": pipeline.live_enabled,
             "proactive": pipeline.proactive_enabled,
+            "muted": pipeline.muted,
         })
         mode_name, _ = get_active_mode()
         await ws.send_json({"type": "mode", "name": mode_name})
@@ -306,6 +392,10 @@ async def ws_endpoint(ws: WebSocket):
                 pipeline.set_proactive(bool(msg.get("enabled")))
             elif t == "toggle_live":
                 pipeline.set_live(bool(msg.get("enabled")))
+            elif t == "mute":
+                pipeline.set_mute(bool(msg.get("enabled")))
+            elif t == "text":
+                pipeline.send_text(str(msg.get("text", "")))
             else:
                 await ws.send_json({"type": "log", "level": "error", "text": f"Bilinmeyen komut: {t}"})
     except WebSocketDisconnect:

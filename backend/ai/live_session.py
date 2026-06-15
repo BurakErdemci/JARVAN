@@ -398,7 +398,7 @@ class LiveSession:
         return await self._executor.handle(function_calls, session)
 
     async def _notification_loop(self, session, queue: asyncio.Queue) -> None:
-        """Gemini CLI işleri bitince Jarvan'a otomatik bildirir."""
+        """agy CLI işleri bitince Jarvan'a otomatik bildirir."""
         try:
             while True:
                 notif = await queue.get()
@@ -408,10 +408,10 @@ class LiveSession:
 
                 if self.is_asleep:
                     # Uyku modunda sessizce logla, konuşma
-                    self.on_log("system", f"[gemini_cli] {job_id} bitti ({status}) — Jarvan uyuyor, bildirim bekliyor.", None)
+                    self.on_log("system", f"[agy] {job_id} bitti ({status}) — Jarvan uyuyor, bildirim bekliyor.", None)
                     continue
 
-                self.on_log("system", f"[gemini_cli] {job_id} bitti, Jarvan'a bildiriliyor.", None)
+                self.on_log("system", f"[agy] {job_id} bitti, Jarvan'a bildiriliyor.", None)
 
                 if status == "done":
                     # Sonucun ilk 800 karakterini ver, geri kalanı varsa belirt

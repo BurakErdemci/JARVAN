@@ -1,12 +1,15 @@
-# Audio - VAD
-silero-vad==5.1.2
-
-# Audio - STT
-faster-whisper==1.1.1
-
-# Audio - Recording
+# Audio - mic kaydı (local sesli döngü)
 pyaudio==0.2.14
 numpy
+
+# ─── Local Voice Stack (gömülü — Voicebox YOK) ──────────────────────
+# Kulak: faster-whisper (STT). Ağız: kokoro-onnx (TTS, bm_george, espeak G2P).
+# espeakng-loader → espeak DLL'i bundle eder (spacy/blis derlemesi GEREKMEZ, py3.13 dostu).
+# sounddevice → Kokoro çıktısını hoparlöre çalar. Beyin: Ollama (gemma4:12b, harici servis).
+faster-whisper>=1.0.0
+kokoro-onnx>=0.4.0
+espeakng-loader>=0.2.0
+sounddevice>=0.4.6
 
 # Screen
 mss==10.0.0
@@ -16,18 +19,15 @@ Pillow==11.2.1
 google-generativeai==0.8.5
 google-genai>=0.8.0
 
-# TTS
-edge-tts==7.2.8
-pygame==2.6.1
-
 # Mod sistemi
 pygetwindow==0.0.9
 
-# Backend
+# Backend / API (FastAPI — backend WS + jarvan_voice event/health API)
 fastapi==0.115.12
 uvicorn==0.34.0
 websockets==14.2
 python-dotenv==1.1.0
+pydantic>=2.0.0
 
 # Memory / MCP
 chromadb>=0.5.0
@@ -40,8 +40,9 @@ playwright>=1.49.0
 # Tools - Spotify API
 spotipy>=2.23.0
 
-# Tools - weather (HTTP)
+# Tools - weather (HTTP) + Ollama/Gemma HTTP client (ai/gemma_brain)
 requests>=2.31.0
+httpx>=0.28.1
 
 # Tools - Gmail OAuth
 google-auth-oauthlib>=1.2.0
@@ -52,7 +53,11 @@ pyautogui>=0.9.54
 duckduckgo_search>=5.0.0
 ddgs>=9.0.0
 
-# Missing/Undeclared Dependencies
+# Wake word (Vosk) + sistem telemetrisi (CPU/RAM — SystemDiagnostics) + diğer
 vosk>=0.3.45
+psutil>=5.9.0
 PyYAML>=6.0.1
-httpx>=0.28.1
+
+# NOT: google-generativeai/google-genai hâlâ briefing_agent / insight_agent /
+# memory_core için duruyor (Gemini Live DEĞİL, tek-seferlik API). "Sıfır Google"
+# istenirse bunlar local'e çevrilince kaldırılabilir.

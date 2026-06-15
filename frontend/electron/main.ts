@@ -75,11 +75,11 @@ function stopBackend() {
 
 function createWindow() {
   win = new BrowserWindow({
-    width: 420,
-    height: 640,
-    minWidth: 420,
-    minHeight: 640,
-    resizable: false,
+    width: 1600,
+    height: 1000,
+    minWidth: 1024,
+    minHeight: 700,
+    resizable: true,
     frame: false,
     transparent: false,
     backgroundColor: "#0b0b0e",
@@ -88,13 +88,16 @@ function createWindow() {
     vibrancy: undefined,
     show: false,
     webPreferences: {
-      preload: path.join(__dirname, "preload.mjs"),
+      preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
 
-  win.once("ready-to-show", () => win?.show());
+  win.once("ready-to-show", () => {
+    win?.maximize();
+    win?.show();
+  });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);

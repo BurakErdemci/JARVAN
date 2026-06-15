@@ -1,12 +1,15 @@
-import { Minus, X, Pin } from "lucide-react";
+import { Minus, X, Pin, Cpu } from "lucide-react";
 import { useState } from "react";
 import { motion } from "framer-motion";
 
 interface Props {
   connected: boolean;
+  onToggleTasks?: () => void;
+  showTasksButton?: boolean;
+  activeTasksCount?: number;
 }
 
-export function TitleBar({ connected }: Props) {
+export function TitleBar({ connected, onToggleTasks, showTasksButton = false, activeTasksCount = 0 }: Props) {
   const [pinned, setPinned] = useState(false);
 
   const handlePin = async () => {
@@ -37,8 +40,20 @@ export function TitleBar({ connected }: Props) {
         </div>
       </div>
 
-      {/* Right: pin + window controls */}
+      {/* Right: tasks, pin + window controls */}
       <div className="no-drag flex items-center gap-1">
+        {showTasksButton && (
+          <button
+            onClick={onToggleTasks}
+            className={`relative grid h-6 w-6 place-items-center rounded-md transition-colors text-ink-muted hover:bg-surface-raised hover:text-ink-soft`}
+            title="Görev Paneli"
+          >
+            <Cpu size={11} strokeWidth={2} />
+            {activeTasksCount > 0 && (
+              <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-amber animate-pulse shadow-[0_0_6px_#ff8a3d]" />
+            )}
+          </button>
+        )}
         <button
           onClick={handlePin}
           className={`grid h-6 w-6 place-items-center rounded-md transition-colors ${

@@ -1,10 +1,26 @@
 """Spotify tool — spotipy tabanlı, pyautogui yok."""
 import asyncio
 import os
+import re
+import unicodedata
 from pathlib import Path
 
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
+
+
+def _norm_tokens(s: str) -> set[str]:
+    """Türkçe aksanları kaldırıp kelime token seti döner (eşleşme skoru için)."""
+    s = unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode().lower()
+    return set(re.findall(r"[a-z0-9]+", s))
+
+
+def _match_score(req_tokens: set[str], candidate_text: str) -> float:
+    """İstenen kelimelerin ne kadarının adayda geçtiği (0..1)."""
+    cand = _norm_tokens(candidate_text)
+    if not req_tokens or not cand:
+        return 0.0
+    return len(req_tokens & cand) / len(req_tokens)
 
 SCOPES = (
     "user-modify-playback-state "
@@ -112,13 +128,30 @@ async def play_spotify_track(
             sp.start_playback(context_uri=playlist["uri"], device_id=device_id)
             return {"ok": True, "result": f"'{playlist['name']}' playlist çalınıyor."}
 
-        results = sp.search(q=query, type="track", limit=1)
+        # Çoklu sonuç çek, istenen ada en çok benzeyeni seç (limit=1 yanlış şarkı çalıyordu).
+        results = sp.search(q=query, type="track", limit=10)
         items = (results.get("tracks") or {}).get("items") or []
         if not items:
             return {"ok": False, "error": f"'{query}' şarkısı bulunamadı."}
-        t = items[0]
-        sp.start_playback(uris=[t["uri"]], device_id=device_id)
-        name = f"{t['name']} — {t['artists'][0]['name']}"
+
+        req = _norm_tokens(f"{track} {artist or ''}")
+
+        def _cand_text(t: dict) -> str:
+            return t["name"] + " " + " ".join(a["name"] for a in t.get("artists", []))
+
+        best = max(items, key=lambda t: _match_score(req, _cand_text(t)))
+        score = _match_score(req, _cand_text(best))
+        name = f"{best['name']} — {best['artists'][0]['name']}"
+
+        # Hiçbiri istenen ada benzemiyorsa rastgele çalma — netleştir.
+        if score < 0.34:
+            return {
+                "ok": False,
+                "error": (f"'{track}' tam eşleşmedi, yanlış şarkı çalmamak için durdum. "
+                          f"En yakın bulduğum: '{name}'. Bunu mu çalayım, yoksa şarkı/sanatçı adını netleştirir misin?"),
+            }
+
+        sp.start_playback(uris=[best["uri"]], device_id=device_id)
         return {"ok": True, "result": f"'{name}' çalınıyor."}
 
     except Exception as e:

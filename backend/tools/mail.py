@@ -105,8 +105,17 @@ def _get_service(account: str | None = None):
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
+            try:
+                creds.refresh(Request())
+            except Exception:
+                # invalid_grant: refresh token ölmüş (expire/revoke) → token'ı sil,
+                # sıfırdan yetkilendir (tarayıcıda tek seferlik Gmail onayı).
+                try:
+                    os.remove(token_path)
+                except OSError:
+                    pass
+                creds = None
+        if not creds or not creds.valid:
             if not os.path.exists(CREDENTIALS_PATH):
                 raise FileNotFoundError(
                     "Gmail OAuth client dosyası bulunamadı. "

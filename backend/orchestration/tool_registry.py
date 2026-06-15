@@ -384,7 +384,7 @@ FUNCTION_DECLARATIONS = [
     {
         "name": "start_gemini_task",
         "description": (
-            "Gemini CLI'yi arka planda başlatır ve kod yazma, refactor, analiz gibi uzun süren geliştirme görevlerini yapar. "
+            "Antigravity CLI (agy)'yi arka planda başlatır ve kod yazma, refactor, analiz gibi uzun süren geliştirme görevlerini yapar. "
             "Görev bitince job_id ile sonucu almak için get_gemini_result kullan. "
             "Kullanıcı 'şu kodu yaz', 'bunu refactor et', 'proje analizi yap' gibi şeyler istediğinde bu aracı kullan."
         ),
@@ -393,11 +393,11 @@ FUNCTION_DECLARATIONS = [
             "properties": {
                 "prompt": {
                     "type": "string",
-                    "description": "Gemini CLI'ye verilecek görev açıklaması. Ne yapılması gerektiğini detaylı yaz."
+                    "description": "agy CLI'ye verilecek görev açıklaması. Ne yapılması gerektiğini detaylı yaz."
                 },
                 "heavy": {
                     "type": "boolean",
-                    "description": "true → gemini-3.1-pro-preview (büyük refactor, derin analiz). false veya boş → gemini-3-flash-preview (genel kod, hızlı işler)."
+                    "description": "true → Gemini 3.1 Pro (High) (büyük refactor, derin analiz). false veya boş → Gemini 3.5 Flash (Medium) (genel kod, hızlı işler)."
                 }
             },
             "required": ["prompt"]
@@ -536,7 +536,7 @@ COMPUTER_USE_HINT = (
     "- `computer_use`: Bilgisayarda herhangi bir uygulamayı otonom kontrol eder (ekranı görür, mouse/keyboard kullanır). "
     "Spotify, Discord, Finder, VS Code, sistem ayarları, masaüstü uygulamalar — HER ŞEY. "
     "30-120sn sürer. Çağırmadan önce 'tamam hallettim, bilgisayarda yapıyorum' de ve SUS.\n"
-    "- Tarayıcı araştırması için `start_gemini_task` kullan — Gemini CLI Playwright ile tam kontrol sağlar.\n"
+    "- Tarayıcı araştırması için `start_gemini_task` kullan — agy CLI Playwright ile tam kontrol sağlar.\n"
     "- Sonuç geldikten sonra result'u sesli özetle, kelimesi kelimesine.\n"
     "- Riskli istekler (dosya silme, format, kritik ayar) → ÖNCE ONAY AL."
 )

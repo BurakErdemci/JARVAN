@@ -10,6 +10,7 @@ const LABELS: Record<PipelineState, { text: string; accent: string }> = {
   listening: { text: "Dinliyor", accent: "text-amber" },
   transcribing: { text: "Anlıyor", accent: "text-ink" },
   responding: { text: "Cevaplıyor", accent: "text-amber" },
+  muted: { text: "Sessiz", accent: "text-red-400" },
 };
 
 export function StateLabel({ state }: Props) {

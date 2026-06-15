@@ -13,10 +13,10 @@ export default {
         },
         hairline: "#1f1f24",
         ink: {
-          DEFAULT: "#ededed",
-          soft: "#8a8a92",
-          muted: "#5a5a62",
-          faint: "#3a3a42",
+          DEFAULT: "#f4f4f7",
+          soft: "#c4c6d0",
+          muted: "#9296a4",
+          faint: "#646878",
         },
         amber: {
           DEFAULT: "#ff8a3d",
@@ -37,6 +37,7 @@ export default {
       fontFamily: {
         mono: ['"JetBrains Mono"', "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
         display: ['"Instrument Serif"', "Georgia", "serif"],
+        sci: ['"Orbitron"', '"JetBrains Mono"', "ui-monospace", "monospace"],
       },
       fontSize: {
         "2xs": ["0.625rem", { lineHeight: "0.875rem" }],
