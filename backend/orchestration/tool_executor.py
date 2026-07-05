@@ -150,14 +150,16 @@ class ToolExecutor:
                 date_prefix = (
                     f"BUGÜNÜN TARİHİ: {datetime.now().strftime('%d %B %Y')}.\n"
                     f"KRİTİK KURAL: Eğitim verilerini ASLA kullanma. Bilmiyorsan uydurma.\n"
-                    f"GÜNCEL BİLGİ GEREKİYORSA: playwright MCP tarayıcı araçlarını kullan — "
-                    f"browser_navigate, browser_snapshot vb. SANA TANIMLI HAZIR araçlardır. "
-                    f"ASLA kendi script'ini yazma, 'playwright install' çalıştırma, paket kurma.\n"
+                    f"GÜNCEL BİLGİ GEREKİYORSA — TARAYICI KURALI: Node.js Playwright scripti yaz ve çalıştır.\n"
+                    f"ZORUNLU: `require('playwright')` hazır kurulu (NODE_PATH'te) — ASLA npm install veya "
+                    f"'playwright install' çalıştırma. Launch AYNEN şöyle olacak:\n"
+                    f"  chromium.launch({{ channel: 'chrome', headless: false }})\n"
+                    f"headless:false ŞART — kullanıcı tarayıcıyı EKRANDA GÖRMEK istiyor. İş bitince browser.close().\n"
                     f"Haber/güncel olay araması için bu siteleri ziyaret et:\n"
                     f"- Oyun haberleri: https://www.ign.com veya https://www.polygon.com\n"
                     f"- Teknoloji/AI: https://techcrunch.com veya https://www.theverge.com\n"
                     f"- Genel haber: https://news.ycombinator.com\n"
-                    f"browser_navigate ile sayfaya git → browser_snapshot ile oku → GERÇEK başlıkları döndür.\n\n"
+                    f"Sayfaya git → içeriği oku (innerText) → GERÇEK başlıkları/verileri döndür.\n\n"
                 )
                 prompt = date_prefix + prompt
             ctx.on_log("system", f"[tool] dispatch(target={target or 'default'}, heavy={heavy}, task={raw[:60]}...)", None)

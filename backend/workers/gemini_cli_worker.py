@@ -282,12 +282,19 @@ async def _run(job_id: str, prompt: str, target: str, heavy: bool) -> None:
     try:
         cmd = _build_command(target, prompt, heavy)
         bin_name = cmd[0]
+        env = os.environ.copy()
+        if target == "gemini":
+            # agy'nin yazdığı Node playwright scriptleri global paketi bulsun
+            # (görünür Chrome ile araştırma — npm i -g playwright).
+            global_root = os.path.expandvars(r"%APPDATA%\npm\node_modules")
+            env["NODE_PATH"] = global_root + os.pathsep + env.get("NODE_PATH", "")
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=JARVAN_DIR,
+            env=env,
         )
         try:
             stdout, stderr = await asyncio.wait_for(
