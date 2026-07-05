@@ -159,6 +159,14 @@ class ToolExecutor:
                     f"- Oyun haberleri: https://www.ign.com veya https://www.polygon.com\n"
                     f"- Teknoloji/AI: https://techcrunch.com veya https://www.theverge.com\n"
                     f"- Genel haber: https://news.ycombinator.com\n"
+                    f"UÇAK BİLETİ / SEYAHAT FİYATI istenirse: havayolu sitelerine GİRME (captcha +\n"
+                    f"tarih-seçici tuzağı). SADECE Google Flights kullan — sorguyu URL'e göm:\n"
+                    f"  https://www.google.com/travel/flights?hl=tr&q=Istanbul%20to%20Izmir%20on%202026-07-06\n"
+                    f"(şehirleri/tarihi göreve göre değiştir; 'yarın' gibi ifadeleri yukarıdaki bugünün\n"
+                    f"tarihinden hesapla). Sayfa yüklenince 3-4sn bekle, innerText'ten 'Gidiş uçuşları'\n"
+                    f"listesindeki ilk 5 uçuşu oku: saat, havayolu, süre, aktarma, fiyat. Açık uçlu\n"
+                    f"'nereye ucuza giderim' sorusu için: https://www.google.com/travel/flights/deals\n"
+                    f"sayfasındaki fırsat kartlarını (şehir, tarih aralığı, fiyat, indirim %) oku.\n"
                     f"Sayfaya git → içeriği oku (innerText) → GERÇEK başlıkları/verileri döndür.\n\n"
                 )
                 prompt = date_prefix + prompt
