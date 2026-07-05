@@ -160,6 +160,32 @@ def read_file(path: str, max_chars: int = 4000) -> dict:
     return {"ok": False, "error": f"Desteklenmeyen dosya türü: {suffix}. Metin veya PDF olmalı."}
 
 
+_DENY_NAMES = {"authorized_keys", "known_hosts", ".netrc", ".npmrc"}
+
+
+def _edit_deny_reason(p: Path) -> Optional[str]:
+    """LLM'in yazmaması gereken hedefler: anahtar/kimlik dosyaları, sistem ve
+    başlangıç klasörleri, .ssh/.git/.venv içi. Symlink hilesine karşı realpath."""
+    try:
+        rp = Path(os.path.realpath(p))
+    except OSError:
+        rp = p
+    name = rp.name.lower()
+    if name in _DENY_NAMES or name.startswith("id_") or rp.suffix.lower() in (".pem", ".key"):
+        return "hassas anahtar/kimlik dosyası"
+    parts = {q.lower() for q in rp.parts}
+    if parts & {".ssh", ".git", ".venv", "site-packages", "node_modules", "__pycache__"}:
+        return "korumalı klasör"
+    low = str(rp).replace("\\", "/").lower()
+    for env_var in ("WINDIR", "ProgramFiles", "ProgramFiles(x86)", "ProgramData"):
+        base = os.environ.get(env_var, "")
+        if base and (low + "/").startswith(base.replace("\\", "/").lower() + "/"):
+            return "sistem klasörü"
+    if "/start menu/programs/startup" in low or low.startswith("/etc/"):
+        return "başlangıç/sistem klasörü"
+    return None
+
+
 def edit_file(path: str, mode: str, new_text: str, old_text: str = "") -> dict:
     """
     Metin dosyasının içeriğini değiştirir.
@@ -180,8 +206,17 @@ def edit_file(path: str, mode: str, new_text: str, old_text: str = "") -> dict:
         ".html", ".css", ".csv", ".xml", ".toml", ".ini", ".env", ".cfg", ".conf",
         ".java", ".cpp", ".c", ".h", ".cs", ".go", ".rs", ".swift", ".sh", ".bat", ".ps1",
     }
-    if p.suffix.lower() not in _EDITABLE and p.suffix != "":
-        return {"ok": False, "error": f"Bu tür düzenlenemez: {p.suffix}. Sadece metin dosyaları."}
+    # Uzantısız dosyalar: serbest bırakma (authorized_keys vb. uzantısızdır) —
+    # sadece bilinen zararsız isimler.
+    _NOEXT_OK = {"makefile", "dockerfile", "license", "readme", "todo", "changelog",
+                 "notes", ".gitignore", ".gitattributes", ".env", ".editorconfig"}
+    if p.suffix.lower() not in _EDITABLE:
+        if not (p.suffix == "" and p.name.lower() in _NOEXT_OK):
+            return {"ok": False, "error": f"Bu tür düzenlenemez: '{p.name}'. Sadece metin dosyaları."}
+
+    deny = _edit_deny_reason(p)
+    if deny:
+        return {"ok": False, "error": f"Bu dosya düzenlenemez ({deny}): {p}"}
     try:
         if p.stat().st_size > 1_000_000:
             return {"ok": False, "error": "Dosya 1 MB'den büyük — bu işi start_gemini_task ile codex'e ver."}

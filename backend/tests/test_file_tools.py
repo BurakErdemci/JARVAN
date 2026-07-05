@@ -135,3 +135,36 @@ def test_edit_missing_file(tmp_path):
 def test_edit_invalid_mode(txt):
     r = edit_file(str(txt), "delete", new_text="x")
     assert r["ok"] is False
+
+
+# ─── edit_file güvenlik sınırları ───────────────────────────────────────
+def test_edit_rejects_unknown_extensionless(tmp_path):
+    p = tmp_path / "authorized_keys"
+    p.write_text("ssh-rsa AAA", encoding="utf-8")
+    r = edit_file(str(p), "append", new_text="evil")
+    assert r["ok"] is False
+    assert p.read_text(encoding="utf-8") == "ssh-rsa AAA"
+
+
+def test_edit_allows_known_extensionless(tmp_path):
+    p = tmp_path / "README"
+    p.write_text("hello", encoding="utf-8")
+    assert edit_file(str(p), "append", new_text="world")["ok"] is True
+
+
+def test_edit_denies_protected_dirs(tmp_path):
+    d = tmp_path / ".ssh"
+    d.mkdir()
+    p = d / "config.txt"
+    p.write_text("x", encoding="utf-8")
+    r = edit_file(str(p), "overwrite", new_text="evil")
+    assert r["ok"] is False
+
+
+def test_edit_denies_key_files(tmp_path):
+    p = tmp_path / "server.key"
+    p.write_text("x", encoding="utf-8")
+    assert edit_file(str(p), "overwrite", new_text="evil")["ok"] is False
+    p2 = tmp_path / "id_rsa.txt"
+    p2.write_text("x", encoding="utf-8")
+    assert edit_file(str(p2), "overwrite", new_text="evil")["ok"] is False
