@@ -101,6 +101,13 @@ GEMMA_THINK = os.getenv("GEMMA_THINK", "0") == "1"
 # bırakmıyor (done_reason=length, eval=1). 8192 → tool'lar + cevap rahat sığar.
 # (Ölçüldü: ctx=4096 ile 27 tool kırık; ctx=8192 ile tool_call + cevap düzgün.)
 GEMMA_NUM_CTX = int(os.getenv("GEMMA_NUM_CTX", "8192"))
+# GPU'ya verilecek katman sayısı (-1 = hepsi). 12GB kartta 12B@8k SINIRDA:
+# ilk sorguda compute tamponları açılırken VRAM taşar → sürücü takas yapar →
+# hem chat timeout hem sistem geneli kasma. 48 katmanın ~42'si GPU'da kalsın,
+# 6'sı RAM'e → ~1.5GB nefes alanı (32GB RAM'de hissedilmez).
+GEMMA_NUM_GPU = int(os.getenv("GEMMA_NUM_GPU", "-1"))
+# Ollama chat zaman aşımı (sn). Soğuk yükleme + 8k prompt eval 60sn'yi aşabiliyor.
+GEMMA_TIMEOUT = float(os.getenv("GEMMA_TIMEOUT", "120"))
 # Uyku modunda Gemma'yı Ollama'dan boşalt (RAM/VRAM serbest). Uyanınca yeniden yüklenir
 # (greeting Kokoro'dan anında çalarak yükleme gecikmesini gizler). 7/24 idle RAM için.
 UNLOAD_ON_SLEEP = os.getenv("UNLOAD_ON_SLEEP", "1") == "1"

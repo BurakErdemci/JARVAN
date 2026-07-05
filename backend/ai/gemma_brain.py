@@ -17,7 +17,7 @@ from typing import Any, Iterator
 
 import httpx
 
-from config import OLLAMA_URL, GEMMA_MODEL, GEMMA_THINK, GEMMA_NUM_CTX
+from config import OLLAMA_URL, GEMMA_MODEL, GEMMA_THINK, GEMMA_NUM_CTX, GEMMA_NUM_GPU, GEMMA_TIMEOUT
 
 
 class GemmaError(RuntimeError):
@@ -29,9 +29,11 @@ class GemmaBrain:
         self,
         base_url: str | None = None,
         model: str | None = None,
-        timeout: float = 60.0,
+        timeout: float | None = None,
         think: bool | None = None,
     ) -> None:
+        if timeout is None:
+            timeout = GEMMA_TIMEOUT
         self.base_url = (base_url or OLLAMA_URL).rstrip("/")
         self.model = model or GEMMA_MODEL
         self.think = GEMMA_THINK if think is None else think
@@ -66,6 +68,10 @@ class GemmaBrain:
               tools: list[dict] | None, options: dict[str, Any] | None) -> dict:
         # num_ctx default 8192 — 27 tool şeması 4096'ya sığmıyor. Çağıran override edebilir.
         opts = {"num_ctx": GEMMA_NUM_CTX}
+        # 12GB kartta 12B@8k sınırda: VRAM'e nefes alanı için katmanların bir kısmı
+        # RAM'e taşınabilir (GEMMA_NUM_GPU, -1 = hepsi GPU'da).
+        if GEMMA_NUM_GPU >= 0:
+            opts["num_gpu"] = GEMMA_NUM_GPU
         opts.update(options or {})
         body: dict[str, Any] = {
             "model": self.model,
