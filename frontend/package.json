@@ -11,6 +11,9 @@
     "start": "electron ."
   },
   "dependencies": {
+    "@fontsource/chakra-petch": "^5.2.7",
+    "@fontsource/ibm-plex-mono": "^5.2.7",
+    "@fontsource/ibm-plex-sans": "^5.2.8",
     "framer-motion": "^11.11.17",
     "lucide-react": "^0.453.0",
     "react": "^18.3.1",

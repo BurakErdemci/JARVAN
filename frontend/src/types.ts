@@ -35,7 +35,7 @@ export interface SystemMetrics {
 }
 
 export type TaskStatus = "queued" | "running" | "blocked" | "done" | "error";
-export type TaskTarget = "codex" | "agy" | "local" | "gemma";
+export type TaskTarget = "codex" | "agy" | "claude" | "local" | "gemma";
 
 export interface TaskStep {
   ts: number;

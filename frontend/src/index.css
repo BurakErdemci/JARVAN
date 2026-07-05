@@ -1,11 +1,18 @@
+/* KOKPİT 2090 — taban stiller. Fontlar bundle'dan (CDN yok, %100 local). */
+@import "@fontsource/chakra-petch/500.css";
+@import "@fontsource/chakra-petch/600.css";
+@import "@fontsource/ibm-plex-sans/400.css";
+@import "@fontsource/ibm-plex-sans/500.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
   color-scheme: dark;
-  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-feature-settings: "ss01", "cv11", "calt";
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
 }
 
 html,
@@ -16,195 +23,130 @@ body,
   margin: 0;
   padding: 0;
   overflow: hidden;
-  background: #060608;
-  color: #ededed;
+  background: #05070d;
+  color: #d2def0;
   user-select: none;
   -webkit-user-select: none;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Sohbet metni seçilebilsin (kopyalama) */
+.selectable,
+.selectable * {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 .drag-region {
   -webkit-app-region: drag;
 }
-
 .no-drag {
   -webkit-app-region: no-drag;
 }
 
-/* Film grain overlay */
-.grain::before {
-  content: "";
-  position: fixed;
-  inset: -100%;
-  pointer-events: none;
-  z-index: 9999;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='120' height='120' filter='url(%23n)' opacity='0.6'/></svg>");
-  opacity: 0.025;
-  mix-blend-mode: overlay;
-  animation: grain 8s steps(10) infinite;
+/* ─── KOKPİT DNA: pahlı köşe (chamfer) ─────────────────────────────
+   2090 dosya-kartı görünümü — radius yerine kesik köşe. */
+.chamfer {
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+}
+.chamfer-sm {
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
 }
 
-@keyframes grain {
-  0%, 100% { transform: translate(0, 0); }
-  10% { transform: translate(-5%, -10%); }
-  20% { transform: translate(-15%, 5%); }
-  30% { transform: translate(7%, -25%); }
-  40% { transform: translate(-5%, 25%); }
-  50% { transform: translate(-15%, 10%); }
-  60% { transform: translate(15%, 0%); }
-  70% { transform: translate(0%, 15%); }
-  80% { transform: translate(3%, 35%); }
-  90% { transform: translate(-10%, 10%); }
+/* İnce mühendislik ızgarası — sadece void zemininde, çok soluk */
+.blueprint {
+  background-image:
+    linear-gradient(rgba(67, 229, 201, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(67, 229, 201, 0.025) 1px, transparent 1px);
+  background-size: 44px 44px;
 }
 
-/* Scrollbar */
+/* ─── Reaktör halkaları (imza öğe) — tamamı CSS, JS frame loop YOK ── */
+@keyframes spin-cw {
+  to { transform: rotate(360deg); }
+}
+@keyframes spin-ccw {
+  to { transform: rotate(-360deg); }
+}
+@keyframes core-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+.reactor-ring {
+  transform-origin: 50% 50%;
+  transform-box: fill-box;
+}
+.reactor-idle .ring-mid { animation: spin-cw 28s linear infinite; }
+.reactor-idle .ring-inner { animation: spin-ccw 40s linear infinite; }
+.reactor-idle .core-glow { animation: core-pulse 5s ease-in-out infinite; }
+
+.reactor-listening .ring-mid { animation: spin-cw 7s linear infinite; }
+.reactor-listening .ring-inner { animation: spin-ccw 11s linear infinite; }
+.reactor-listening .core-glow { animation: core-pulse 2.2s ease-in-out infinite; }
+
+.reactor-transcribing .ring-mid { animation: spin-cw 1.6s linear infinite; }
+.reactor-transcribing .ring-inner { animation: spin-ccw 2.4s linear infinite; }
+.reactor-transcribing .core-glow { animation: core-pulse 0.9s ease-in-out infinite; }
+
+.reactor-responding .ring-mid { animation: spin-cw 4s linear infinite; }
+.reactor-responding .ring-inner { animation: spin-ccw 6s linear infinite; }
+.reactor-responding .core-glow { animation: core-pulse 1.4s ease-in-out infinite; }
+
+.reactor-muted .ring-mid,
+.reactor-muted .ring-inner,
+.reactor-muted .core-glow {
+  animation: none;
+}
+
+/* ─── Açılış dizisi: paneller sırayla güç alır ─────────────────────── */
+@keyframes power-on {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.boot-1 { animation: power-on 0.45s ease-out 0.05s both; }
+.boot-2 { animation: power-on 0.45s ease-out 0.18s both; }
+.boot-3 { animation: power-on 0.45s ease-out 0.32s both; }
+.boot-4 { animation: power-on 0.45s ease-out 0.45s both; }
+
+/* Görev kartı canlı-nabız kenarı */
+@keyframes edge-run {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+.edge-running {
+  animation: edge-run 1.8s ease-in-out infinite;
+}
+
+/* İnce kaydırma çubukları */
 ::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #1c1c24;
-  border-radius: 2px;
+  background: #16233a;
+  border: 2px solid #05070d;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #2b2b36;
+  background: #24374f;
 }
 
-/* Radial vignette */
-.vignette::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 9998;
-  background: radial-gradient(
-    ellipse at center,
-    transparent 0%,
-    transparent 45%,
-    rgba(0, 0, 0, 0.55) 100%
-  );
+/* Görünür klavye odağı */
+:focus-visible {
+  outline: 1px solid #43e5c9;
+  outline-offset: 1px;
 }
 
-.tabular {
-  font-variant-numeric: tabular-nums;
-}
-
-/* Sci-fi HUD Grid Background */
-.grid-bg {
-  background-size: 40px 40px;
-  background-image: 
-    linear-gradient(to right, rgba(20, 30, 45, 0.15) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(20, 30, 45, 0.15) 1px, transparent 1px);
-}
-
-/* Subtle scanlines overlay */
-.scanlines {
-  position: relative;
-}
-.scanlines::after {
-  content: " ";
-  display: block;
-  position: absolute;
-  top: 0; left: 0; bottom: 0; right: 0;
-  background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
-  z-index: 2;
-  background-size: 100% 3px, 6px 100%;
-  pointer-events: none;
-  opacity: 0.25;
-}
-
-/* Hairline dividers */
-.hairline-x {
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    #13131c 15%,
-    #252536 50%,
-    #13131c 85%,
-    transparent 100%
-  );
-  height: 1px;
-}
-
-/* Futuristic HUD Card with custom brackets */
-.hud-card {
-  position: relative;
-  background: rgba(10, 10, 14, 0.45);
-  border: 1px solid rgba(255, 255, 255, 0.04);
-}
-
-.hud-card::before,
-.hud-card::after {
-  content: "";
-  position: absolute;
-  width: 8px;
-  height: 8px;
-  border-color: rgba(0, 229, 255, 0.45);
-  border-style: solid;
-  pointer-events: none;
-}
-
-.hud-card-corner-top::before {
-  top: -1px; left: -1px;
-  border-width: 1px 0 0 1px;
-}
-.hud-card-corner-top::after {
-  top: -1px; right: -1px;
-  border-width: 1px 1px 0 0;
-}
-.hud-card-corner-bottom::before {
-  bottom: -1px; left: -1px;
-  border-width: 0 0 1px 1px;
-}
-.hud-card-corner-bottom::after {
-  bottom: -1px; right: -1px;
-  border-width: 0 1px 1px 0;
-}
-
-/* Neon Glow utilities */
-.amber-glow {
-  box-shadow:
-    0 0 0 1px rgba(255, 138, 0, 0.35),
-    0 0 24px -2px rgba(255, 138, 0, 0.4);
-}
-
-.pink-glow {
-  box-shadow:
-    0 0 0 1px rgba(255, 42, 133, 0.35),
-    0 0 24px -2px rgba(255, 42, 133, 0.4);
-}
-
-.teal-glow {
-  box-shadow:
-    0 0 0 1px rgba(0, 229, 255, 0.35),
-    0 0 24px -2px rgba(0, 229, 255, 0.4);
-}
-
-.purple-glow {
-  box-shadow:
-    0 0 0 1px rgba(157, 78, 221, 0.35),
-    0 0 24px -2px rgba(157, 78, 221, 0.4);
-}
-
-/* Animations */
-@keyframes spin-slow {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-@keyframes spin-reverse {
-  from { transform: rotate(360deg); }
-  to { transform: rotate(0deg); }
-}
-
-.animate-spin-slow {
-  animation: spin-slow 20s linear infinite;
-}
-
-.animate-spin-reverse-slow {
-  animation: spin-reverse 25s linear infinite;
+/* Hareket azaltma tercihine saygı */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

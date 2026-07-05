@@ -1,69 +1,69 @@
 import type { Config } from "tailwindcss";
 
+/**
+ * KOKPİT 2090 — tasarım tokenları.
+ * Çift sıcaklık sistemi: soğuk (coolant) = makine/telemetri,
+ * sıcak (plasma) = Jarvan'ın sesi/birincil aksiyon. Renk süs değil bilgidir.
+ */
 export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {
-        obsidian: "#0b0b0e",
-        surface: {
-          DEFAULT: "#141418",
-          raised: "#1a1a20",
-          sunken: "#0e0e12",
+        void: "#05070D",        // sayfa tabanı — mavi-siyah gövde
+        hull: {
+          DEFAULT: "#0A111C",   // panel yüzeyi
+          raised: "#0E1726",    // kabarık yüzey (kart)
+          sunken: "#070C14",    // çukur yüzey (giriş, kuyu)
         },
-        hairline: "#1f1f24",
+        steel: {
+          DEFAULT: "#16233A",   // yapısal çizgi/hairline
+          bright: "#24374F",    // vurgulu çizgi
+        },
+        coolant: {
+          DEFAULT: "#43E5C9",   // makine/telemetri/ok
+          dim: "#1D6E62",
+          ghost: "rgba(67,229,201,0.08)",
+        },
+        plasma: {
+          DEFAULT: "#FF7A2F",   // Jarvan'ın sesi/birincil
+          dim: "#8C4520",
+          ghost: "rgba(255,122,47,0.08)",
+        },
+        flare: {
+          DEFAULT: "#FF4D5E",   // hata/susturma
+          dim: "#7A2833",
+        },
         ink: {
-          DEFAULT: "#f4f4f7",
-          soft: "#c4c6d0",
-          muted: "#9296a4",
-          faint: "#646878",
+          DEFAULT: "#D2DEF0",   // ana metin (buz)
+          soft: "#A8B9D0",
+          muted: "#7C8DA6",     // ikincil (sis)
+          ghost: "#46586F",     // en soluk
         },
-        amber: {
-          DEFAULT: "#ff8a3d",
-          glow: "#ff9a4d",
-          deep: "#c86a2a",
-        },
-        pink: {
-          live: "#ff4d8f",
-          glow: "#ff7aad",
+        agent: {
+          codex: "#A78BFA",     // menekşe
+          agy: "#43E5C9",       // teal (coolant ailesi)
+          claude: "#E8C468",    // altın
+          local: "#7C8DA6",
         },
         mode: {
-          unreal: "#5eead4",
-          unity: "#fbbf24",
-          code: "#a78bfa",
-          default: "#8a8a92",
+          unreal: "#43E5C9",
+          unity: "#E8C468",
+          code: "#A78BFA",
+          default: "#7C8DA6",
         },
       },
       fontFamily: {
-        mono: ['"JetBrains Mono"', "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
-        display: ['"Instrument Serif"', "Georgia", "serif"],
-        sci: ['"Orbitron"', '"JetBrains Mono"', "ui-monospace", "monospace"],
+        display: ['"Chakra Petch"', '"IBM Plex Sans"', "system-ui", "sans-serif"],
+        body: ['"IBM Plex Sans"', "system-ui", "sans-serif"],
+        mono: ['"IBM Plex Mono"', "ui-monospace", "SFMono-Regular", "monospace"],
       },
       fontSize: {
         "2xs": ["0.625rem", { lineHeight: "0.875rem" }],
+        "3xs": ["0.5625rem", { lineHeight: "0.75rem" }],
       },
-      animation: {
-        "breath": "breath 4s ease-in-out infinite",
-        "pulse-slow": "pulse 3s ease-in-out infinite",
-        "grain": "grain 8s steps(10) infinite",
-      },
-      keyframes: {
-        breath: {
-          "0%, 100%": { opacity: "0.4", transform: "scaleY(1)" },
-          "50%": { opacity: "0.7", transform: "scaleY(1.15)" },
-        },
-        grain: {
-          "0%, 100%": { transform: "translate(0, 0)" },
-          "10%": { transform: "translate(-5%, -10%)" },
-          "20%": { transform: "translate(-15%, 5%)" },
-          "30%": { transform: "translate(7%, -25%)" },
-          "40%": { transform: "translate(-5%, 25%)" },
-          "50%": { transform: "translate(-15%, 10%)" },
-          "60%": { transform: "translate(15%, 0%)" },
-          "70%": { transform: "translate(0%, 15%)" },
-          "80%": { transform: "translate(3%, 35%)" },
-          "90%": { transform: "translate(-10%, 10%)" },
-        },
+      letterSpacing: {
+        hud: "0.14em", // etiketlerin HUD havası
       },
     },
   },
