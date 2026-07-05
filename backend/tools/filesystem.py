@@ -195,11 +195,16 @@ def edit_file(path: str, mode: str, new_text: str, old_text: str = "") -> dict:
     import shutil
     import time as _time
 
+    if not (path or "").strip():
+        return {"ok": False, "error": "path parametresi EKSİK. Düzenlenecek dosyanın tam "
+                "yolunu ver — önce find_file/read_file ile yolu bul, sonra edit_file'ı "
+                "path ile TEKRAR çağır."}
     p = resolve_path(path)
     if not p.exists():
         return {"ok": False, "error": f"Dosya bulunamadı: {p}. Önce find_file ile ara."}
     if p.is_dir():
-        return {"ok": False, "error": f"Bu bir klasör, dosya değil: {p}"}
+        return {"ok": False, "error": f"Bu bir klasör, dosya değil: {p}. Klasörün İÇİNDEKİ "
+                "dosyanın tam yolunu ver (list_directory ile içine bakabilirsin)."}
 
     _EDITABLE = {
         ".txt", ".md", ".py", ".js", ".ts", ".tsx", ".jsx", ".json", ".yaml", ".yml",

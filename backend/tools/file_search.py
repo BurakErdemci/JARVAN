@@ -34,8 +34,15 @@ def normalize(s: str) -> str:
     return " ".join(s.split())
 
 
+# Tür bildiren dolgu kelimeleri — dosya ADINDA aranmaz ("zombi klasörü" → "zombi")
+_STOPWORDS = {"folder", "file", "dosya", "dosyasi", "klasor", "klasoru", "kloser",
+              "directory", "dizin", "document", "belge"}
+
+
 def _words(query: str) -> list[str]:
-    return [w for w in normalize(query).split() if len(w) > 1] or normalize(query).split()
+    ws = [w for w in normalize(query).split() if len(w) > 1]
+    meaningful = [w for w in ws if w not in _STOPWORDS]
+    return meaningful or ws or normalize(query).split()
 
 
 # ─── Skorlama ───────────────────────────────────────────────────────────
@@ -110,9 +117,11 @@ def _search_everything(words: list[str], limit: int = 100) -> list[str] | None:
         loose = [w[:4] for w in words if len(w) >= 4]
         if loose:
             paths = _run([es, "-n", str(limit), *loose])
-    if not paths and len(words) > 1:
-        # son çare: VEYA — kelimelerden herhangi biri geçsin, sıralamayı skor yapar
-        paths = _run([es, "-n", str(limit), "|".join(words)])
+    if not paths:
+        # son çare: VEYA + kısaltılmış formlar ("zombie" söylenir, klasör "zombi"dir) —
+        # herhangi biri geçsin, sıralamayı skor yapar
+        alts = {w for w in words} | {w[:4] for w in words if len(w) >= 4}
+        paths = _run([es, "-n", str(limit), "|".join(sorted(alts))])
     return paths
 
 
@@ -186,7 +195,8 @@ def smart_find(name: str, search_in: str | None = None, max_results: int = 6) ->
             mtime = st.st_mtime
         except OSError:
             st, mtime = None, 0.0
-        scored.append((score_candidate(name, p, mtime), p, st))
+        # skoru dolgu kelimeleri atılmış sorguyla hesapla ("zombi klasörü" → "zombi")
+        scored.append((score_candidate(" ".join(words), p, mtime), p, st))
     scored.sort(key=lambda t: t[0], reverse=True)
     top = scored[:max_results]
 

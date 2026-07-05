@@ -1,4 +1,3 @@
-import { motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import type { PipelineState } from "../types";
 
@@ -9,6 +8,8 @@ interface Props {
 
 const BAR_COUNT = 32;
 
+// Performans: framer-motion KULLANMA — 60fps'te bar başına yeni tween üretip
+// renderer'ı %70+ CPU'ya çıkarıyordu. Düz div + CSS transition + düşük fps yeter.
 export function Waveform({ state, accent = "amber" }: Props) {
   const [amplitudes, setAmplitudes] = useState<number[]>(
     Array.from({ length: BAR_COUNT }, () => 0.1)
@@ -17,9 +18,15 @@ export function Waveform({ state, accent = "amber" }: Props) {
 
   useEffect(() => {
     let t = 0;
+    let last = 0;
+    // Boşta 10fps'lik nefes yeter; aktifken 24fps akıcı görünür.
+    const fpsInterval = state === "idle" ? 100 : 42;
 
-    const tick = () => {
-      t += 0.04;
+    const tick = (now: number) => {
+      frameRef.current = requestAnimationFrame(tick);
+      if (now - last < fpsInterval) return;
+      t += ((now - last) / 1000) * 2.4; // hız gerçek zamana bağlı (fps'ten bağımsız)
+      last = now;
       setAmplitudes(() => {
         return Array.from({ length: BAR_COUNT }, (_, i) => {
           const center = (BAR_COUNT - 1) / 2;
@@ -52,7 +59,6 @@ export function Waveform({ state, accent = "amber" }: Props) {
           return 0.1;
         });
       });
-      frameRef.current = requestAnimationFrame(tick);
     };
 
     frameRef.current = requestAnimationFrame(tick);
@@ -64,22 +70,20 @@ export function Waveform({ state, accent = "amber" }: Props) {
   const color = accent === "pink" ? "bg-pink-live" : "bg-amber";
   const dimColor = "bg-ink-faint";
   const isActive = state !== "idle";
+  const glow = accent === "pink" ? "rgba(255,77,143,0.5)" : "rgba(255,138,61,0.5)";
 
   return (
     <div className="flex h-full w-full items-center justify-center gap-[3px]">
       {amplitudes.map((amp, i) => (
-        <motion.div
+        <div
           key={i}
           className={`w-[3px] rounded-full ${isActive ? color : dimColor}`}
-          animate={{ height: `${Math.max(3, amp * 100)}%` }}
-          transition={{ type: "tween", duration: 0.08, ease: "linear" }}
           style={{
+            height: `${Math.max(3, amp * 100)}%`,
+            transition: "height 90ms linear",
             opacity: isActive ? 0.4 + amp * 0.6 : 0.35,
-            boxShadow: isActive
-              ? `0 0 ${Math.min(8, amp * 10)}px ${
-                  accent === "pink" ? "rgba(255,77,143,0.5)" : "rgba(255,138,61,0.5)"
-                }`
-              : "none",
+            // Gölge sadece aktifken ve sabit — her karede yeni shadow compositing pahalı
+            boxShadow: isActive ? `0 0 6px ${glow}` : "none",
           }}
         />
       ))}

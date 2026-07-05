@@ -351,6 +351,16 @@ async def lifespan(app: FastAPI):
     metrics_task.cancel()
     stop_watcher()
     pipeline.stop()
+    # Uygulama kapanınca modeli VRAM'de bırakma (Ollama ayrı servis — keep_alive
+    # yüzünden 30dk daha 8GB VRAM işgal edip sistemi kastırıyor).
+    try:
+        import httpx
+        from config import GEMMA_MODEL
+        httpx.post("http://127.0.0.1:11434/api/chat",
+                   json={"model": GEMMA_MODEL, "keep_alive": 0}, timeout=5.0)
+        print("[shutdown] Gemma VRAM'den boşaltıldı.", flush=True)
+    except Exception:
+        pass
 
 
 app = FastAPI(lifespan=lifespan)

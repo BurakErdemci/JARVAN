@@ -47,8 +47,8 @@ export function SystemDiagnostics({ connected, mockMode, mode, metrics }: Props)
       }
     }, 2000);
     const fade = setInterval(() => {
-      setRadarDots((prev) => prev.map((d) => ({ ...d, opacity: d.opacity - 0.05 })).filter((d) => d.opacity > 0));
-    }, 100);
+      setRadarDots((prev) => prev.map((d) => ({ ...d, opacity: d.opacity - 0.15 })).filter((d) => d.opacity > 0));
+    }, 300);
     return () => { clearInterval(spawn); clearInterval(fade); };
   }, []);
 
