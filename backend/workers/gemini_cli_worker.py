@@ -322,6 +322,9 @@ async def _run_claude_shell(job_id: str, prompt: str) -> None:
     komut argv'ye bölünür, prompt tek bir argüman olarak geçer (shell injection yok)."""
     try:
         import shlex
+        # '-' ile başlayan prompt child CLI'da flag sanılmasın (argument injection)
+        if prompt.lstrip().startswith("-"):
+            prompt = "Task: " + prompt.lstrip()
         args = shlex.split(CLAUDE_DISPATCH_CMD, posix=(os.name != "nt"))
         if os.name == "nt":
             args = [a.strip('"') for a in args]
