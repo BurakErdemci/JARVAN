@@ -12,7 +12,8 @@ from tools.weather import get_weather
 from tools.developer import create_folder
 from tools.memory_backup import backup_memory, get_backup_status
 from tools.device_transfer import send_to_device, get_transfer_status
-from tools.filesystem import find_file, read_file, list_directory
+from tools.filesystem import read_file, list_directory, edit_file
+from tools.file_search import smart_find
 
 # ─── Konfigürasyon ──────────────────────────────────────────────────
 
@@ -48,17 +49,41 @@ FUNCTION_DECLARATIONS = [
     {
         "name": "find_file",
         "description": (
-            "Bilgisayarda dosya veya klasör arar. "
-            "'rapor.pdf nerede', 'masaüstündeki excel dosyası', 'proje klasörünü bul' gibi isteklerde kullan. "
-            "Masaüstü, Belgeler, İndirmeler ve Home klasörlerinde otomatik tarar."
+            "Bilgisayarda dosya veya klasör arar (fuzzy — isim birebir olmasa da en yakın "
+            "adayları tüm diskte bulur). 'rapor.pdf nerede', 'masaüstündeki excel', "
+            "'proje klasörünü bul' gibi isteklerde kullan. Sonuçta `suggestion: true` "
+            "geliyorsa emin değil demektir: adayları kullanıcıya söyle ve hangisini "
+            "kastettiğini SOR — tahmin edip işlem yapma."
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "name": {"type": "string", "description": "Aranacak dosya/klasör adı veya anahtar kelime"},
+                "name": {"type": "string", "description": "Aranacak dosya/klasör adı veya anahtar kelime (kullanıcının söylediği gibi)"},
                 "search_in": {"type": "string", "description": "Aranacak klasör (opsiyonel): 'masaüstü', 'downloads', tam yol vb."},
             },
             "required": ["name"],
+        },
+    },
+    {
+        "name": "edit_file",
+        "description": (
+            "Mevcut bir metin dosyasının İÇERİĞİNİ değiştirir. 'şu dosyada X'i Y yap', "
+            "'dosyanın sonuna ekle', 'içeriğini şununla değiştir' isteklerinde kullan. "
+            "KURAL: önce read_file ile içeriğe bak, sonra küçük hedefli değişiklik yap "
+            "(mode='replace' + dosyadaki BİREBİR old_text). Otomatik yedek alınır. "
+            "Büyük/çok dosyalı değişiklikleri bu tool'la yapma — start_gemini_task ile "
+            "codex'e (target='gpt') gönder."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Dosya yolu — tam yol veya 'masaüstü/notlar.txt' gibi"},
+                "mode": {"type": "string", "enum": ["replace", "append", "overwrite"],
+                         "description": "replace: old_text→new_text; append: sona ekle; overwrite: tamamını yeniden yaz"},
+                "new_text": {"type": "string", "description": "Yazılacak yeni metin"},
+                "old_text": {"type": "string", "description": "replace modunda: dosyadaki değiştirilecek metin (birebir)"},
+            },
+            "required": ["path", "mode", "new_text"],
         },
     },
     {
@@ -471,8 +496,14 @@ TOOL_IMPL = {
         account=args.get("account"),
     ),
     "send_whatsapp": lambda args: send_whatsapp(args.get("message", ""), args.get("phone")),
-    "find_file": lambda args: find_file(args.get("name", ""), args.get("search_in")),
+    "find_file": lambda args: smart_find(args.get("name", ""), args.get("search_in")),
     "read_file": lambda args: read_file(args.get("path", "")),
+    "edit_file": lambda args: edit_file(
+        path=args.get("path", ""),
+        mode=args.get("mode", ""),
+        new_text=args.get("new_text", ""),
+        old_text=args.get("old_text", ""),
+    ),
     "list_directory": lambda args: list_directory(args.get("path", "desktop")),
     "backup_memory": lambda args: backup_memory(),
     "get_backup_status": lambda args: get_backup_status(),

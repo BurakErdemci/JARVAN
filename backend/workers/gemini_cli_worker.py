@@ -159,7 +159,11 @@ def _target_label(target: str, heavy: bool) -> str:
 
 
 def _build_command(target: str, prompt: str, heavy: bool) -> list[str]:
-    """Hedefe göre subprocess komutu kurar. codex/claude bin'leri Windows .cmd için resolve."""
+    """Hedefe göre subprocess komutu kurar. codex/claude bin'leri Windows .cmd için resolve.
+    Güvenlik: '-' ile başlayan prompt CLI'da flag sanılabilir (argument injection) —
+    başına etiket ekle."""
+    if prompt.lstrip().startswith("-"):
+        prompt = "Task: " + prompt.lstrip()
     if target == "gemini":
         model = MODEL_HEAVY if heavy else MODEL_FAST
         return [AGY_BIN, "--model", model, "--dangerously-skip-permissions",
@@ -313,12 +317,21 @@ async def _run(job_id: str, prompt: str, target: str, heavy: bool) -> None:
 
 
 async def _run_claude_shell(job_id: str, prompt: str) -> None:
-    """CLAUDE_DISPATCH_CMD verildiyse claude'u özel shell komutuyla çalıştır ({prompt} değişir).
-    Özel sarmalayıcı (gerçek TTY için script/tmux vb.) isteyenler için kaçış kapısı."""
+    """CLAUDE_DISPATCH_CMD verildiyse claude'u özel komutla çalıştır ({prompt} değişir).
+    Özel sarmalayıcı isteyenler için kaçış kapısı. Güvenlik: shell string DEĞİL —
+    komut argv'ye bölünür, prompt tek bir argüman olarak geçer (shell injection yok)."""
     try:
-        cmd_str = CLAUDE_DISPATCH_CMD.replace("{prompt}", prompt)
-        proc = await asyncio.create_subprocess_shell(
-            cmd_str,
+        import shlex
+        args = shlex.split(CLAUDE_DISPATCH_CMD, posix=(os.name != "nt"))
+        if os.name == "nt":
+            args = [a.strip('"') for a in args]
+        args = [a.replace("{prompt}", prompt) for a in args]
+        if not args:
+            await _fail(job_id, "claude", "CLAUDE_DISPATCH_CMD boş/geçersiz.")
+            return
+        args[0] = _resolve_bin(args[0])
+        proc = await asyncio.create_subprocess_exec(
+            *args,
             stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,

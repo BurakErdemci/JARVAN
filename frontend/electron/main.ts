@@ -158,7 +158,23 @@ ipcMain.handle("window:toggle-always-on-top", () => {
   return next;
 });
 
+function ensureAutostart() {
+  // PC açılınca Jarvan otomatik başlasın (Windows; Mac tarafı ayrı kurulacak).
+  // Dev kurulumda process.execPath = node_modules'daki electron.exe → app yolu arg olarak verilir.
+  if (process.platform !== "win32") return;
+  try {
+    app.setLoginItemSettings({
+      openAtLogin: true,
+      path: process.execPath,
+      args: app.isPackaged ? [] : [DIST],
+    });
+  } catch (e) {
+    console.error("[autostart] ayarlanamadı:", e);
+  }
+}
+
 app.whenReady().then(() => {
+  ensureAutostart();
   startBackend();
   createWindow();
   createTray();

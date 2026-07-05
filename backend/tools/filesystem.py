@@ -160,6 +160,74 @@ def read_file(path: str, max_chars: int = 4000) -> dict:
     return {"ok": False, "error": f"Desteklenmeyen dosya türü: {suffix}. Metin veya PDF olmalı."}
 
 
+def edit_file(path: str, mode: str, new_text: str, old_text: str = "") -> dict:
+    """
+    Metin dosyasının içeriğini değiştirir.
+    mode: 'replace' (old_text → new_text), 'append' (sona ekle), 'overwrite' (tamamını yaz).
+    Güvenlik: değişiklikten önce ~/.jarvan/file_backups/ altına zaman damgalı yedek alınır.
+    """
+    import shutil
+    import time as _time
+
+    p = resolve_path(path)
+    if not p.exists():
+        return {"ok": False, "error": f"Dosya bulunamadı: {p}. Önce find_file ile ara."}
+    if p.is_dir():
+        return {"ok": False, "error": f"Bu bir klasör, dosya değil: {p}"}
+
+    _EDITABLE = {
+        ".txt", ".md", ".py", ".js", ".ts", ".tsx", ".jsx", ".json", ".yaml", ".yml",
+        ".html", ".css", ".csv", ".xml", ".toml", ".ini", ".env", ".cfg", ".conf",
+        ".java", ".cpp", ".c", ".h", ".cs", ".go", ".rs", ".swift", ".sh", ".bat", ".ps1",
+    }
+    if p.suffix.lower() not in _EDITABLE and p.suffix != "":
+        return {"ok": False, "error": f"Bu tür düzenlenemez: {p.suffix}. Sadece metin dosyaları."}
+    try:
+        if p.stat().st_size > 1_000_000:
+            return {"ok": False, "error": "Dosya 1 MB'den büyük — bu işi start_gemini_task ile codex'e ver."}
+    except OSError as e:
+        return {"ok": False, "error": str(e)}
+
+    mode = (mode or "").strip().lower()
+    if mode not in ("replace", "append", "overwrite"):
+        return {"ok": False, "error": "mode 'replace', 'append' veya 'overwrite' olmalı."}
+
+    # Yedek al
+    backup_dir = HOME / ".jarvan" / "file_backups"
+    try:
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        stamp = _time.strftime("%Y%m%d-%H%M%S")
+        backup = backup_dir / f"{p.stem}.{stamp}{p.suffix}"
+        shutil.copy2(p, backup)
+    except Exception as e:
+        return {"ok": False, "error": f"Yedek alınamadı, düzenleme iptal: {e}"}
+
+    try:
+        if mode == "overwrite":
+            p.write_text(new_text, encoding="utf-8")
+        elif mode == "append":
+            content = p.read_text(encoding="utf-8", errors="replace")
+            sep = "" if (not content or content.endswith("\n")) else "\n"
+            p.write_text(content + sep + new_text, encoding="utf-8")
+        else:  # replace
+            if not old_text:
+                return {"ok": False, "error": "replace modunda old_text zorunlu."}
+            content = p.read_text(encoding="utf-8", errors="replace")
+            count = content.count(old_text)
+            if count == 0:
+                return {"ok": False, "error": "old_text dosyada bulunamadı. read_file ile içeriğe "
+                        "bak ve old_text'i dosyadaki haliyle BİREBİR ver.",
+                        "backup": str(backup)}
+            content = content.replace(old_text, new_text)
+            p.write_text(content, encoding="utf-8")
+        return {"ok": True, "path": str(p), "mode": mode,
+                "replaced": count if mode == "replace" else None,
+                "backup": str(backup),
+                "result": f"Dosya güncellendi ({mode})."}
+    except Exception as e:
+        return {"ok": False, "error": f"Düzenleme hatası: {e}", "backup": str(backup)}
+
+
 def list_directory(path: str = "desktop") -> dict:
     """Klasörün içindekileri listeler."""
     p = resolve_path(path)
