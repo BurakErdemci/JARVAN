@@ -19,6 +19,7 @@ import functools
 import json
 import threading
 import time
+from datetime import datetime
 from typing import Callable
 
 import numpy as np
@@ -31,6 +32,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import (
     AUDIO_SAMPLE_RATE, AUDIO_CHANNELS, AUDIO_CHUNK_MS,
     VOICE_SILENCE_MS, VOICE_RMS_GATE, WAKE_WORD, VOSK_MODEL_PATH, UNLOAD_ON_SLEEP,
+    BRAIN_PROVIDER,
 )
 from ai.gemma_brain import GemmaBrain, GemmaError
 from ai.voice_stt import stt
@@ -127,7 +129,12 @@ class LocalVoiceSession:
         self._pending_unload = False  # uyku: veda bitince boşalt (hemen değil)
         self._inflight: set[str] = set()
         self._cooldown: dict[str, float] = {}
-        self.brain = GemmaBrain()
+        # Beyin: Mac'te bulut (Gemini Flash text), Windows'ta local Gemma — config.py karar verir.
+        if BRAIN_PROVIDER == "gemini":
+            from ai.cloud_brain import CloudBrain
+            self.brain = CloudBrain()
+        else:
+            self.brain = GemmaBrain()
         self.tools = _ollama_tools()
         self.messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
 
@@ -186,7 +193,9 @@ class LocalVoiceSession:
         asyncio.create_task(asyncio.to_thread(self._warmup))
 
         if not self.brain.health():
-            self.on_log("error", "Ollama/Gemma erişilemiyor — `ollama serve` çalışıyor mu?", None)
+            hint = ("GEMINI_API_KEY/ağ bağlantısını kontrol et." if BRAIN_PROVIDER == "gemini"
+                    else "`ollama serve` çalışıyor mu?")
+            self.on_log("error", f"Beyin erişilemiyor — {hint}", None)
 
         notif_q: asyncio.Queue = asyncio.Queue()
         set_notification_queue(notif_q)
@@ -236,6 +245,8 @@ class LocalVoiceSession:
 
     def _warm_brain(self) -> None:
         """Gemma'yı num_ctx=8192 + tool'larla yükle (Ollama'ya resident yap)."""
+        if not getattr(self.brain, "needs_warmup", True):
+            return  # bulut beyin: yüklenecek model yok, ısıtma çağrısı kota israfı
         try:
             self.brain.chat([{"role": "user", "content": "hi"}], tools=self.tools)
         except Exception as e:
@@ -298,6 +309,10 @@ class LocalVoiceSession:
             await self._respond_inner(user_text)
 
     async def _respond_inner(self, user_text: str) -> None:
+        # Zaman bilinci: her turda güncel tarih/saat — "yarın", "hafta sonu" doğru
+        # hesaplansın, bilgilerin güncelliği sorgulanabilsin.
+        now = datetime.now().strftime("%A, %d %B %Y, %H:%M")
+        self.messages[0]["content"] = f"{SYSTEM_PROMPT}\nCURRENT DATE AND TIME: {now}"
         self.messages.append({"role": "user", "content": user_text})
         try:
             for _ in range(MAX_TOOL_ROUNDS):

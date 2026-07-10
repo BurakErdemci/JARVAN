@@ -61,6 +61,18 @@ SCREEN_MONITOR_INDEX = int(os.getenv("SCREEN_MONITOR_INDEX", "2"))
 # Otomatik: Windows → 12 (RX 6750 XT), Mac → unified memory'nin ~%70'i.
 GPU_VRAM_GB = float(os.getenv("GPU_VRAM_GB", _default_vram_gb()))
 
+
+def _default_browser_executable() -> str:
+    """Playwright araştırma tarayıcısı. Boş = channel:'chrome' (kurulu Chrome).
+    Mac'te Chrome yok, Opera GX var → onun binary'si (Chromium tabanlı, çalışıyor)."""
+    if _IS_MAC:
+        opera = "/Applications/Opera GX.app/Contents/MacOS/Opera"
+        if os.path.exists(opera):
+            return opera
+    return ""
+
+BROWSER_EXECUTABLE = os.getenv("BROWSER_EXECUTABLE", _default_browser_executable())
+
 # Whisper (STT — faster-whisper, gömülü).
 # 'small': CPU'da hızlı (~2-3s) + ~0.5GB RAM — 16GB makine + "hız önemli" için ideal.
 # large-v3-turbo CPU'da 8-12s + ~2GB (çok ağır). Türkçe doğruluk az gelirse → 'medium'.
@@ -92,6 +104,15 @@ WHISPER_LANGUAGE     = os.getenv("WHISPER_LANGUAGE", "tr")
 # WAKE_WORD=uyan + VOSK_MODEL_PATH=models/vosk-tr.
 WAKE_WORD       = os.getenv("WAKE_WORD", "wake up").lower()
 VOSK_MODEL_PATH = os.getenv("VOSK_MODEL_PATH", "models/vosk-en-small")
+
+# Beyin sağlayıcısı: 'ollama' (local Gemma) | 'gemini' (bulut Flash text API).
+# Mac (16GB unified) 12B'yi kaldıramıyor → default bulut; Windows (12GB GPU) local.
+# NOT: Bu Gemini LIVE değil — düz text generate_content, maliyet sızıntısı yok.
+BRAIN_PROVIDER = os.getenv("BRAIN_PROVIDER", "gemini" if _IS_MAC else "ollama").lower()
+# Bulut beyin modeli (API tag). 3.1-flash-lite: free tier'da en yüksek RPM/RPD
+# (Pro'lar Nisan 2026'dan beri free tier dışı), dispatcher rolüne yeterli, vision var.
+# Kalite yetmezse .env'den gemini-3.5-flash'a geç.
+GEMINI_BRAIN_MODEL = os.getenv("GEMINI_BRAIN_MODEL", "gemini-3.1-flash-lite")
 
 OLLAMA_URL  = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
 GEMMA_MODEL = os.getenv("GEMMA_MODEL", "gemma4:12b")

@@ -147,13 +147,20 @@ class ToolExecutor:
             raw = prompt
             if target in ("", "gemini"):
                 from datetime import datetime
+                from config import BROWSER_EXECUTABLE
+                # Mac'te Chrome yok → Opera GX (executablePath); Windows'ta kurulu Chrome (channel).
+                launch_line = (
+                    f"chromium.launch({{ executablePath: {BROWSER_EXECUTABLE!r}, headless: false }})"
+                    if BROWSER_EXECUTABLE
+                    else "chromium.launch({ channel: 'chrome', headless: false })"
+                )
                 date_prefix = (
                     f"BUGÜNÜN TARİHİ: {datetime.now().strftime('%d %B %Y')}.\n"
                     f"KRİTİK KURAL: Eğitim verilerini ASLA kullanma. Bilmiyorsan uydurma.\n"
                     f"GÜNCEL BİLGİ GEREKİYORSA — TARAYICI KURALI: Node.js Playwright scripti yaz ve çalıştır.\n"
                     f"ZORUNLU: `require('playwright')` hazır kurulu (NODE_PATH'te) — ASLA npm install veya "
                     f"'playwright install' çalıştırma. Launch AYNEN şöyle olacak:\n"
-                    f"  chromium.launch({{ channel: 'chrome', headless: false }})\n"
+                    f"  {launch_line}\n"
                     f"headless:false ŞART — kullanıcı tarayıcıyı EKRANDA GÖRMEK istiyor. İş bitince browser.close().\n"
                     f"Haber/güncel olay araması için bu siteleri ziyaret et:\n"
                     f"- Oyun haberleri: https://www.ign.com veya https://www.polygon.com\n"

@@ -285,8 +285,11 @@ async def _run(job_id: str, prompt: str, target: str, heavy: bool) -> None:
         env = os.environ.copy()
         if target == "gemini":
             # agy'nin yazdığı Node playwright scriptleri global paketi bulsun
-            # (görünür Chrome ile araştırma — npm i -g playwright).
-            global_root = os.path.expandvars(r"%APPDATA%\npm\node_modules")
+            # (görünür tarayıcıyla araştırma — npm i -g playwright).
+            if platform.system() == "Windows":
+                global_root = os.path.expandvars(r"%APPDATA%\npm\node_modules")
+            else:
+                global_root = "/opt/homebrew/lib/node_modules"  # Mac (brew node)
             env["NODE_PATH"] = global_root + os.pathsep + env.get("NODE_PATH", "")
         proc = await asyncio.create_subprocess_exec(
             *cmd,
