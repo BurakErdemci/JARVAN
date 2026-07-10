@@ -17,6 +17,7 @@ import logging
 import math
 import os
 import platform
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -36,6 +37,27 @@ MY_EXPORT    = EXPORTS_DIR / THIS_DEVICE / "memories.json"
 STATE_FILE   = _BASE / "data" / "sync_state.json"
 
 SIMILARITY_THRESHOLD = 0.92   # Bu üstü duplikat sayılır
+
+# save_insight'ın eklediği '[2026-05-13 15:48:14] ' prefix'leri (zincir olabilir)
+_TS_PREFIX = re.compile(r"^(?:\[\d{4}-\d{2}-\d{2}[^\]]*\]\s*)+")
+_TS_ALL    = re.compile(r"\[(\d{4}-\d{2}-\d{2}[^\]]*)\]")
+
+
+def _normalize_record(rec: Dict) -> Dict:
+    """Dokümanın başındaki zaman damgası zincirini soyar; en eski damgayı
+    metadata['timestamp']'e taşır. Eski merge bug'ı her gece yeni damga
+    ekliyordu — aynı bilgi farklı zincirlerle 8-9 kopya olmuştu."""
+    doc = rec.get("document", "")
+    m = _TS_PREFIX.match(doc)
+    if not m:
+        return rec
+    stamps = _TS_ALL.findall(m.group(0))
+    rec = {**rec, "document": doc[m.end():].strip()}
+    if stamps:
+        meta = dict(rec.get("metadata") or {})
+        meta["timestamp"] = min(stamps)  # ilk kayıt anı (zincirin en eskisi)
+        rec["metadata"] = meta
+    return rec
 
 
 # ─── Yardımcılar ───────────────────────────────────────────────────
@@ -67,6 +89,53 @@ def _last_sync_time() -> Optional[str]:
 def _save_sync_time() -> None:
     STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     _save_json(STATE_FILE, {"last_sync": datetime.now().isoformat()})
+
+
+# ─── Local temizlik (eski merge bug'ının mirasını onarır) ──────────
+
+def clean_local_memories() -> dict:
+    """Local ChromaDB'deki damga zincirlerini soyar ve tam-metin duplikatları
+    siler. Her cihazda export'tan ÖNCE çalışır — böylece export'lar temiz gider
+    ve eski bug'la şişmiş DB'ler (224 kayıt / 46 gerçek bilgi) kendini onarır."""
+    try:
+        from ai.memory_core import get_memory_core
+        core = get_memory_core()
+        data = core.get_all_embeddings()
+        if not data["ids"]:
+            return {"ok": True, "cleaned": 0, "total": 0}
+
+        seen_texts = set()
+        changed = []   # damgası soyulan kayıtlar (aynı id ile güncellenecek)
+        dup_ids = []   # tam-metin duplikat/boş kayıtlar (silinecek)
+        total_kept = 0
+        for i, doc_id in enumerate(data["ids"]):
+            rec = _normalize_record({
+                "id": doc_id,
+                "document": data["documents"][i],
+                "metadata": data["metadatas"][i],
+            })
+            key = rec["document"].strip().lower()
+            if not key or key in seen_texts:
+                dup_ids.append(doc_id)
+                continue
+            seen_texts.add(key)
+            total_kept += 1
+            if rec["document"] != data["documents"][i]:
+                changed.append(rec)
+
+        if not changed and not dup_ids:
+            return {"ok": True, "cleaned": 0, "total": total_kept}
+
+        # ÖNCE yaz — yazma başarısızsa (API/embedding hatası) silme YAPILMAZ.
+        if changed and core.upsert_verbatim(changed) == 0:
+            return {"ok": False, "error": "Normalize edilen kayıtlar yazılamadı — silme atlandı."}
+        core.delete_by_ids(dup_ids)
+        logger.info(f"[sync] Local temizlik: {len(data['ids'])} → {total_kept} kayıt "
+                    f"({len(dup_ids)} duplikat silindi, {len(changed)} damga soyuldu)")
+        return {"ok": True, "cleaned": len(dup_ids), "total": total_kept}
+    except Exception as e:
+        logger.error(f"[sync] Local temizlik hatası: {e}")
+        return {"ok": False, "error": str(e)}
 
 
 # ─── Export (her cihaz kendi hafızasını atar) ──────────────────────
@@ -110,10 +179,11 @@ def _deduplicate(all_records: List[Dict]) -> List[Dict]:
                     is_dup = True
                     break
         else:
-            # Embedding yoksa metin prefix karşılaştırması
-            text = rec.get("document", "")[:120].lower()
+            # Embedding yoksa tam metin karşılaştırması (kayıtlar normalize
+            # edilmiş geliyor — damga prefix'leri soyulmuş durumda)
+            text = rec.get("document", "").strip().lower()
             for k in kept:
-                if text and text == k.get("document", "")[:120].lower():
+                if text and text == k.get("document", "").strip().lower():
                     is_dup = True
                     break
 
@@ -149,8 +219,8 @@ def merge_and_deduplicate() -> dict:
             if not data or "records" not in data:
                 continue
             device = data.get("device", device_dir.name)
-            records = data["records"]
-            # Her kayda kaynak cihazı işaretle
+            # Damga zincirlerini soy + kaynak cihazı işaretle
+            records = [_normalize_record(r) for r in data["records"]]
             for r in records:
                 r["source_device"] = device
             all_records.extend(records)
@@ -164,17 +234,16 @@ def merge_and_deduplicate() -> dict:
         # Deduplikat
         merged = _deduplicate(all_records)
 
-        # Master ChromaDB'ye yaz (önce temizle, sonra ekle — tam sync)
+        # Master ChromaDB'ye yaz. upsert_verbatim ŞART: save_insight her kayda
+        # yeni '[tarih]' prefix'i ekliyordu → her gece merge hafızayı kartopu
+        # gibi şişiriyordu. Sıra da önemli: ÖNCE yaz, başarılıysa artıkları sil.
         from ai.memory_core import get_memory_core
         core = get_memory_core()
         existing = core.get_all_embeddings()
-        if existing["ids"]:
-            core.delete_by_ids(existing["ids"])
-        for rec in merged:
-            core.save_insight(
-                text=rec["document"],
-                type=rec.get("metadata", {}).get("type", "behavioral")
-            )
+        if core.upsert_verbatim(merged) == 0 and merged:
+            return {"ok": False, "error": "Merge master'a yazılamadı — mevcut kayıtlar korundu."}
+        merged_ids = {r["id"] for r in merged}
+        core.delete_by_ids([i for i in existing["ids"] if i not in merged_ids])
 
         # JarvanShare'e geri yaz (Windows okur)
         _save_json(MERGED_FILE, {
@@ -236,14 +305,37 @@ def nightly_sync() -> dict:
     """
     results = {}
 
+    # 0. Eski merge bug'ının şişirdiği local DB'yi onar (damga zinciri + duplikat)
+    results["clean"] = clean_local_memories()
+
     # 1. Her iki cihaz da önce kendi hafızasını export eder
     results["export"] = export_local_memories()
 
     if IS_MAC:
         # 2a. Mac merge eder
         results["merge"] = merge_and_deduplicate()
+        # 3. Küratör: eskimiş/gereksiz bilgileri arşivle, bayatları işaretle
+        from tools.memory_curator import curate_memories
+        results["curate"] = curate_memories()
+        if results["curate"].get("archived") or results["curate"].get("stale"):
+            _refresh_merged_from_master()  # Windows küratörden geçmiş halini alsın
     else:
         # 2b. Windows Mac'in merge dosyasını import eder
         results["import"] = import_merged_memories()
 
     return results
+
+
+def _refresh_merged_from_master() -> None:
+    """Küratör master'ı değiştirdikten sonra merged.json'ı güncel haliyle yazar."""
+    try:
+        from ai.memory_core import get_memory_core
+        records = get_memory_core().export_all()
+        _save_json(MERGED_FILE, {
+            "merged_at": datetime.now().isoformat(),
+            "source_devices": ["master_post_curation"],
+            "count": len(records),
+            "records": records,
+        })
+    except Exception as e:
+        logger.error(f"[sync] merged.json tazelenemedi: {e}")

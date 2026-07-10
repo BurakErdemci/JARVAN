@@ -177,6 +177,26 @@ class MemoryCore:
             logger.info(f"[memory] {imported} hafıza import edildi (kaynak: {source})")
         return imported
 
+    def upsert_verbatim(self, records: List[Dict[str, Any]]) -> int:
+        """Kayıtları id'leriyle OLDUĞU GİBİ yazar/günceller — save_insight gibi
+        zaman damgası EKLEMEZ (merge'in save_insight kullanması her gece her kayda
+        yeni '[tarih]' prefix'i ekleyip hafızayı kartopu gibi şişiriyordu).
+
+        Upsert bilinçli tercih: çağıran taraf 'önce yaz, başarılıysa fazlalığı sil'
+        sırasını kurabilsin — silme-önce-yazma veri kaybı penceresi kapanır."""
+        if self._read_only or not records:
+            return 0
+        try:
+            self.collection.upsert(
+                ids=[r["id"] for r in records],
+                documents=[r["document"] for r in records],
+                metadatas=[(r.get("metadata") or {"type": "behavioral"}) for r in records],
+            )
+            return len(records)
+        except Exception as e:
+            logger.error(f"upsert_verbatim başarısız: {e}")
+            return 0
+
     def get_all_embeddings(self) -> Dict[str, Any]:
         """Deduplication için tüm kayıtları embedding'leriyle döner."""
         try:
