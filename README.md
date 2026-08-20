@@ -449,4 +449,4 @@ JARVAN is migrating its tools to the standard MCP interface so both Gemini Live 
 
 ## License
 
-Personal use project. Contact for licensing inquiries.
+[MIT](LICENSE) © 2026 Burak Emre Erdemci
